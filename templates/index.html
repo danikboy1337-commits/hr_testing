@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Halyk HR Forum - Тестирование компетенций</title>
+    <!-- reCAPTCHA -->
+    <script src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoad" async defer></script>
+    <script>
+        var recaptchaLoaded = false;
+        function onRecaptchaLoad() {
+            recaptchaLoaded = true;
+            console.log('reCAPTCHA loaded!');
+        }
+    </script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1DB584 0%, #0a7d5a 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #root { width: 100%; max-width: 1200px; padding: 20px; }
+        .container {
+            background: white;
+            border-radius: 24px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: white;
+            color: #333;
+            padding: 40px;
+            text-align: center;
+            border-bottom: 3px solid #1DB584;
+        }
+        .header img {
+            max-width: 400px;
+            width: 100%;
+            height: auto;
+            margin-bottom: 20px;
+        }
+        .header p { 
+            font-size: 1.2rem;
+            color: #666;
+        }
+        .content { padding: 40px; }
+        .form-group { margin-bottom: 24px; }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: #1DB584;
+        }
+        .form-group input.error {
+            border-color: #dc3545;
+        }
+        .form-hint {
+            color: #666;
+            font-size: 12px;
+            margin-top: 4px;
+        }
+        .form-error {
+            color: #dc3545;
+            font-size: 12px;
+            margin-top: 4px;
+            font-weight: 600;
+        }
+        .btn {
+            width: 100%;
+            padding: 16px;
+            background: #1DB584;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn:hover {
+            background: #16a073;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(29, 181, 132, 0.3);
+        }
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .btn-secondary {
+            background: #6c757d;
+            margin-top: 12px;
+        }
+        .btn-secondary:hover { background: #5a6268; }
+        .profiles-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        .profile-card {
+            background: #f8f9fa;
+            border: 3px solid transparent;
+            border-radius: 16px;
+            padding: 24px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .profile-card:hover {
+            border-color: #1DB584;
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(29, 181, 132, 0.2);
+        }
+        .profile-card h3 { color: #1DB584; margin-bottom: 8px; }
+        .profile-card p { color: #888; font-size: 14px; }
+        .logout-btn {
+            background: #dc3545;
+            width: auto;
+            padding: 8px 16px;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+        .logout-btn:hover { background: #c82333; }
+        .back-btn {
+            background: #6c757d;
+            width: auto;
+            padding: 8px 16px;
+            font-size: 14px;
+            margin-bottom: 20px;
+            margin-right: 10px;
+        }
+        .back-btn:hover { background: #5a6268; }
+        .section-title {
+            font-size: 24px;
+            color: #333;
+            margin: 40px 0 20px 0;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        .section-title:first-child {
+            margin-top: 0;
+        }
+        .test-card {
+            background: white;
+            border: 3px solid #e0e0e0;
+            border-radius: 16px;
+            padding: 24px;
+            cursor: pointer;
+            transition: all 0.3s;
+            position: relative;
+        }
+        .test-card:hover {
+            border-color: #1DB584;
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(29, 181, 132, 0.2);
+        }
+        .test-card.completed {
+            border-color: #1DB584;
+            background: linear-gradient(135deg, #fff 0%, #e8f5f1 100%);
+        }
+        .test-card.in-progress {
+            border-color: #ffa726;
+            background: linear-gradient(135deg, #fff 0%, #fff8e1 100%);
+        }
+        .status-badge {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            color: white;
+        }
+        .status-badge.completed {
+            background: #1DB584;
+        }
+        .status-badge.in-progress {
+            background: #ffa726;
+        }
+        .status-badge.not-started {
+            background: #999;
+        }
+        .test-card h4 {
+            color: #333;
+            font-size: 18px;
+            margin-bottom: 8px;
+            padding-right: 100px;
+            font-weight: 600;
+        }
+        .test-card .profile-name {
+            color: #888;
+            font-size: 12px;
+            margin-bottom: 12px;
+        }
+        .test-score {
+            font-size: 32px;
+            font-weight: 700;
+            color: #1DB584;
+            margin: 12px 0 8px 0;
+        }
+        .test-level {
+            display: inline-block;
+            padding: 6px 16px;
+            background: #1DB584;
+            color: white;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+        /* Добавь стиль для капчи */
+        .recaptcha-container {
+            margin: 20px 0;
+            display: flex;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        function App() {
+            const [step, setStep] = useState('phone');
+            const [phone, setPhone] = useState('+');
+            const [phoneError, setPhoneError] = useState('');
+            const [formData, setFormData] = useState({
+                name: '', surname: '', phone: '', company: '', job_title: ''
+            });
+            const [profiles, setProfiles] = useState([]);
+            const [selectedProfile, setSelectedProfile] = useState(null);
+            const [specializations, setSpecializations] = useState([]);
+            const [myTests, setMyTests] = useState([]);
+            const [loading, setLoading] = useState(false);
+            const [userName, setUserName] = useState('');
+
+            // ВОТ СЮДА ВСТАВЬ:
+            useEffect(() => {
+                if (step === 'register' && window.recaptchaLoaded && typeof grecaptcha !== 'undefined') {
+                    setTimeout(() => {
+                        const widget = document.getElementById('recaptcha-widget');
+                        if (widget && !widget.hasChildNodes()) {
+                            grecaptcha.render('recaptcha-widget', {
+                                'sitekey': '6Lf-r-8rAAAAAI_2AAYKfUjF2uRqLzgljIaoEYYM'
+                            });
+                        }
+                    }, 100);
+                }
+            }, [step]);
+
+            useEffect(() => {
+                const token = localStorage.getItem('halyk_token');
+                if (token) {
+                    const name = localStorage.getItem('halyk_user_name');
+                    setUserName(name || '');
+                    loadProfiles();
+                    loadMyTests();
+                }
+            }, []);
+
+            // ===== ВАЛИДАЦИЯ ТЕЛЕФОНА =====
+            const handlePhoneChange = (e) => {
+                let value = e.target.value;
+                
+                // Всегда начинается с +
+                if (!value.startsWith('+')) {
+                    value = '+' + value.replace(/\+/g, '');
+                }
+                
+                // Только + и цифры
+                value = '+' + value.slice(1).replace(/\D/g, '');
+                
+                // Максимум 12 символов (+7 + 10 цифр)
+                if (value.length <= 12) {
+                    setPhone(value);
+                    setPhoneError('');
+                }
+            };
+
+            const validatePhone = (phoneValue) => {
+                // Проверка формата: +77001234567 (ровно 12 символов)
+                if (phoneValue.length !== 12) {
+                    return 'Телефон должен содержать 12 символов';
+                }
+                
+                if (!/^\+\d{11}$/.test(phoneValue)) {
+                    return 'Неверный формат телефона';
+                }
+                
+                return '';
+            };
+
+            const handlePhoneSubmit = async (e) => {
+                e.preventDefault();
+                
+                // Валидация перед отправкой
+                const error = validatePhone(phone);
+                if (error) {
+                    setPhoneError(error);
+                    return;
+                }
+                
+                setLoading(true);
+
+                try {
+                    const response = await fetch('/api/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ phone })
+                    });
+
+                    const data = await response.json();
+                    
+                    if (data.status === 'found') {
+                        localStorage.setItem('halyk_token', data.token);
+                        localStorage.setItem('halyk_user_id', data.user_id);
+                        localStorage.setItem('halyk_user_name', data.name + ' ' + data.surname);
+                        
+                        setUserName(data.name + ' ' + data.surname);
+                        loadProfiles();
+                        loadMyTests();
+                    } else {
+                        setFormData({...formData, phone});
+                        setStep('register');
+                    }
+                } catch (error) {
+                    alert('Ошибка входа: ' + error.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+
+            const handleRegister = async (e) => {
+                e.preventDefault();
+                
+                // Валидация телефона
+                const error = validatePhone(formData.phone);
+                if (error) {
+                    alert('Некорректный формат телефона: ' + error);
+                    return;
+                }
+                
+                // Ждем загрузки капчи
+                if (!window.recaptchaLoaded || typeof grecaptcha === 'undefined') {
+                    alert('Капча загружается, подождите 2 секунды');
+                    return;
+                }
+
+                // Проверка капчи
+                const recaptchaResponse = grecaptcha.getResponse();
+                if (!recaptchaResponse) {
+                    alert('Пожалуйста, подтвердите что вы не робот');
+                    return;
+                }
+                
+                setLoading(true);
+
+                try {
+                    const response = await fetch('/api/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            ...formData,
+                            recaptcha_token: recaptchaResponse
+                        })
+                    });
+
+                    const data = await response.json();
+                    
+                    if (response.status === 429) {
+                        alert('Слишком много попыток. Попробуйте позже.');
+                        grecaptcha.reset();
+                        return;
+                    }
+                    
+                    if (data.status === 'success') {
+                        localStorage.setItem('halyk_token', data.token);
+                        localStorage.setItem('halyk_user_id', data.user_id);
+                        localStorage.setItem('halyk_user_name', formData.name + ' ' + formData.surname);
+                        
+                        setUserName(formData.name + ' ' + formData.surname);
+                        loadProfiles();
+                        loadMyTests();
+                    }
+                } catch (error) {
+                    alert('Ошибка регистрации: ' + error.message);
+                    grecaptcha.reset();
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const loadProfiles = async () => {
+                try {
+                    const response = await fetch('/api/profiles');
+                    const data = await response.json();
+                    setProfiles(data.profiles);
+                    setStep('dashboard');
+                } catch (error) {
+                    alert('Ошибка загрузки профессий');
+                }
+            };
+
+            const loadMyTests = async () => {
+                const token = localStorage.getItem('halyk_token');
+                try {
+                    const response = await fetch('/api/my-specializations', {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    const data = await response.json();
+                    setMyTests(data.specializations || []);
+                } catch (error) {
+                    console.error('Ошибка загрузки тестов');
+                }
+            };
+
+            const handleSelectProfile = async (profile) => {
+                setSelectedProfile(profile);
+
+                if (profile.has_specializations) {
+                    setLoading(true);
+                    try {
+                        const response = await fetch(`/api/profiles/${profile.id}/specializations`);
+                        const data = await response.json();
+                        setSpecializations(data.specializations);
+                        setStep('specializations');
+                    } catch (error) {
+                        alert('Ошибка загрузки специализаций');
+                    } finally {
+                        setLoading(false);
+                    }
+                } else {
+                    const response = await fetch(`/api/profiles/${profile.id}/specializations`);
+                    const data = await response.json();
+                    if (data.specializations.length > 0) {
+                        handleSelectSpecialization(data.specializations[0]);
+                    }
+                }
+            };
+
+            const handleSelectSpecialization = async (specialization) => {
+                const token = localStorage.getItem('halyk_token');
+
+                try {
+                    await fetch('/api/select-specialization', {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({ specialization_id: specialization.id })
+                    });
+
+                    const testResponse = await fetch('/api/start-test', {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({ specialization_id: specialization.id })
+                    });
+
+                    const testData = await testResponse.json();
+                    window.location.href = `/test?user_test_id=${testData.user_test_id}`;
+                } catch (error) {
+                    alert('Ошибка запуска теста');
+                }
+            };
+
+            const handleTestClick = (test) => {
+                if (test.status === 'completed') {
+                    window.location.href = `/results?user_test_id=${test.user_test_id}`;
+                } else {
+                    window.location.href = `/test?user_test_id=${test.user_test_id}`;
+                }
+            };
+
+            const handleLogout = () => {
+                localStorage.removeItem('halyk_token');
+                localStorage.removeItem('halyk_user_id');
+                localStorage.removeItem('halyk_user_name');
+                setStep('phone');
+                setPhone('+');
+                setUserName('');
+                setMyTests([]);
+                setPhoneError('');
+            };
+
+            const getStatusText = (status) => {
+                switch(status) {
+                    case 'completed': return '✅ Завершено';
+                    case 'in_progress': return '⏳ В процессе';
+                    case 'not_started': return '🔒 Не начато';
+                    default: return '';
+                }
+            };
+
+            const getLevel = (score, maxScore) => {
+                const percentage = (score / maxScore) * 100;
+                if (percentage >= 80) return 'Senior';
+                if (percentage >= 50) return 'Middle';
+                return 'Junior';
+            };
+
+            return (
+                <div className="container">
+                    <div className="header">
+                        <img src="/static/images/Halyk_LogoName.png" alt="Халык банк" />
+                        <p>Система оценки компетенций IT-специалистов</p>
+                    </div>
+
+                    <div className="content">
+                        {step === 'phone' && (
+                            <form onSubmit={handlePhoneSubmit}>
+                                <h2 style={{marginBottom: '30px', color: '#333'}}>Вход по телефону</h2>
+                                
+                                <div className="form-group">
+                                    <label>Номер телефона *</label>
+                                    <input
+                                        type="tel"
+                                        value={phone}
+                                        onChange={handlePhoneChange}
+                                        maxLength={12}
+                                        required
+                                        placeholder="+77001234567"
+                                        className={phoneError ? 'error' : ''}
+                                    />
+                                    {phoneError ? (
+                                        <div className="form-error">{phoneError}</div>
+                                    ) : (
+                                        <div className="form-hint">Формат: +77001234567 (12 символов)</div>
+                                    )}
+                                </div>
+
+                                <button type="submit" className="btn" disabled={loading}>
+                                    {loading ? 'Проверка...' : 'Продолжить'}
+                                </button>
+                            </form>
+                        )}
+
+                        {step === 'register' && (
+                            <form onSubmit={handleRegister}>
+                                <h2 style={{marginBottom: '30px', color: '#333'}}>Регистрация</h2>
+                                <p style={{marginBottom: '20px', color: '#666'}}>
+                                    Телефон {formData.phone} не найден. Заполните данные:
+                                </p>
+                                
+                                <div className="form-group">
+                                    <label>Имя *</label>
+                                    <input
+                                        type="text"
+                                        value={formData.name}
+                                        onChange={(e) => setFormData({...formData, name: e.target.value})}
+                                        required
+                                    />
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Фамилия *</label>
+                                    <input
+                                        type="text"
+                                        value={formData.surname}
+                                        onChange={(e) => setFormData({...formData, surname: e.target.value})}
+                                        required
+                                    />
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Компания</label>
+                                    <input
+                                        type="text"
+                                        value={formData.company}
+                                        onChange={(e) => setFormData({...formData, company: e.target.value})}
+                                    />
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Должность</label>
+                                    <input
+                                        type="text"
+                                        value={formData.job_title}
+                                        onChange={(e) => setFormData({...formData, job_title: e.target.value})}
+                                    />
+                                </div>
+
+                                {/* КАПЧА */}
+                                <div className="recaptcha-container">
+                                    <div id="recaptcha-widget"></div>
+                                </div>
+
+                                <button type="submit" className="btn" disabled={loading}>
+                                    {loading ? 'Регистрация...' : 'Зарегистрироваться'}
+                                </button>
+                                <button type="button" className="btn btn-secondary" onClick={() => setStep('phone')}>
+                                    Назад
+                                </button>
+                            </form>
+                        )}
+
+                        {step === 'dashboard' && (
+                            <>
+                                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px'}}>
+                                    <h2 style={{color: '#333'}}>Добро пожаловать, {userName}!</h2>
+                                    <button className="btn logout-btn" onClick={handleLogout}>
+                                        Выйти
+                                    </button>
+                                </div>
+
+                                {myTests.length > 0 && (
+                                    <>
+                                        <h3 className="section-title">📊 Мои тесты</h3>
+                                        <div className="profiles-grid">
+                                            {myTests.map(test => (
+                                                <div
+                                                    key={test.id}
+                                                    className={`test-card ${test.status}`}
+                                                    onClick={() => handleTestClick(test)}
+                                                >
+                                                    <span className={`status-badge ${test.status}`}>
+                                                        {getStatusText(test.status)}
+                                                    </span>
+                                                    <h4>{test.name}</h4>
+                                                    <p className="profile-name">{test.profile_name}</p>
+                                                    {test.status === 'completed' && test.score !== null && (
+                                                        <>
+                                                            <div className="test-score">
+                                                                {test.score}/{test.max_score}
+                                                            </div>
+                                                            <div className="test-level">
+                                                                {getLevel(test.score, test.max_score)}
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                    {test.status === 'in_progress' && (
+                                                        <p style={{color: '#ff9800', fontWeight: 600, fontSize: '15px'}}>
+                                                            Продолжить →
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
+
+                                <h3 className="section-title">🎯 Выбрать новый тест</h3>
+                                <p style={{marginBottom: '20px', color: '#666'}}>Выберите профессию для тестирования</p>
+                                <div className="profiles-grid">
+                                    {profiles.map(profile => (
+                                        <div
+                                            key={profile.id}
+                                            className="profile-card"
+                                            onClick={() => handleSelectProfile(profile)}
+                                        >
+                                            <h3>{profile.name}</h3>
+                                            <p>{profile.has_specializations ? 'Выберите специализацию →' : 'Начать тест →'}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </>
+                        )}
+
+                        {step === 'specializations' && (
+                            <>
+                                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px'}}>
+                                    <div>
+                                        <button className="btn back-btn" onClick={() => setStep('dashboard')}>
+                                            ← Назад
+                                        </button>
+                                        <button className="btn logout-btn" onClick={handleLogout}>
+                                            Выйти
+                                        </button>
+                                    </div>
+                                </div>
+                                <h2 style={{color: '#333', marginBottom: '10px'}}>{selectedProfile.name}</h2>
+                                <p style={{marginBottom: '20px', color: '#666'}}>Выберите специализацию</p>
+                                <div className="profiles-grid">
+                                    {specializations.map(spec => (
+                                        <div
+                                            key={spec.id}
+                                            className="profile-card"
+                                            onClick={() => handleSelectSpecialization(spec)}
+                                        >
+                                            <h3>{spec.name}</h3>
+                                            <p>Начать тест →</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
