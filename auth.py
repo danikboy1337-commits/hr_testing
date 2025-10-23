@@ -8,12 +8,14 @@ SECRET_KEY = os.getenv("JWT_SECRET_KEY", "halyk-hr-forum-super-secret-key-change
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 7  # Токен живет 7 дней
 
-def create_access_token(user_id: int, phone: str) -> str:
+def create_access_token(user_id: int, phone: str, role: str = "employee", department_id: Optional[int] = None) -> str:
     """Создать JWT токен для пользователя"""
     expire = datetime.utcnow() + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
     to_encode = {
         "user_id": user_id,
         "phone": phone,
+        "role": role,
+        "department_id": department_id,
         "exp": expire
     }
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
@@ -25,10 +27,17 @@ def verify_token(token: str) -> Optional[dict]:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: int = payload.get("user_id")
         phone: str = payload.get("phone")
-        
+        role: str = payload.get("role", "employee")
+        department_id: Optional[int] = payload.get("department_id")
+
         if user_id is None or phone is None:
             return None
-            
-        return {"user_id": user_id, "phone": phone}
+
+        return {
+            "user_id": user_id,
+            "phone": phone,
+            "role": role,
+            "department_id": department_id
+        }
     except JWTError:
         return None

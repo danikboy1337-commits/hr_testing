@@ -196,12 +196,35 @@ async def get_public_config():
         "org_logo": config.ORG_LOGO
     }
 
+@app.get("/api/departments")
+async def get_departments():
+    """Get list of all departments"""
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT id, name, description FROM departments ORDER BY name")
+                rows = await cur.fetchall()
+                departments = [
+                    {"id": row[0], "name": row[1], "description": row[2]}
+                    for row in rows
+                ]
+                return {"status": "success", "departments": departments}
+    except Exception as e:
+        print(f"Error fetching departments: {e}")
+        return {"status": "success", "departments": []}
+
 # =====================================================
 # HTML ROUTES - PUBLIC
 # =====================================================
 @app.get("/", response_class=HTMLResponse)
 async def home():
     with open('templates/index.html', 'r', encoding='utf-8') as f:
+        return HTMLResponse(content=f.read())
+
+@app.get("/panels", response_class=HTMLResponse)
+async def panels_page():
+    """Panel selection page after login/registration"""
+    with open('templates/panels.html', 'r', encoding='utf-8') as f:
         return HTMLResponse(content=f.read())
 
 @app.get("/specializations", response_class=HTMLResponse)
@@ -308,18 +331,25 @@ async def login(request: LoginRequest):
         async with get_db_connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "SELECT id, name, surname FROM users WHERE phone = %s",
+                    "SELECT id, name, surname, role, department_id FROM users WHERE phone = %s",
                     (request.phone,)
                 )
                 user = await cur.fetchone()
-                
+
                 if user:
-                    token = create_access_token(user_id=user[0], phone=request.phone)
+                    token = create_access_token(
+                        user_id=user[0],
+                        phone=request.phone,
+                        role=user[3] or "employee",
+                        department_id=user[4]
+                    )
                     return {
                         "status": "found",
                         "user_id": user[0],
                         "name": user[1],
                         "surname": user[2],
+                        "role": user[3] or "employee",
+                        "department_id": user[4],
                         "token": token
                     }
                 else:
@@ -333,7 +363,9 @@ class UserRegister(BaseModel):
     phone: Optional[str] = None
     company: Optional[str] = None
     job_title: Optional[str] = None
-    recaptcha_token: str  # Добавили капчу
+    role: str = "employee"  # employee, hr, manager
+    department_id: Optional[int] = None
+    recaptcha_token: str
 
 @app.post("/api/register")
 async def register_user(request: Request, user: UserRegister):
@@ -347,12 +379,16 @@ async def register_user(request: Request, user: UserRegister):
                 "remoteip": request.client.host
             }
         )
-        
+
         recaptcha_result = recaptcha_response.json()
-        
+
         if not recaptcha_result.get("success"):
             raise HTTPException(status_code=400, detail="Капча не пройдена")
-    
+
+    # Validate role
+    if user.role not in ['employee', 'hr', 'manager']:
+        raise HTTPException(status_code=400, detail="Неверная роль")
+
     # Обычная регистрация
     try:
         async with get_db_connection() as conn:
@@ -360,19 +396,26 @@ async def register_user(request: Request, user: UserRegister):
                 await cur.execute("SELECT id FROM users WHERE phone = %s", (user.phone,))
                 if await cur.fetchone():
                     raise HTTPException(status_code=400, detail="Телефон уже зарегистрирован")
-                
+
                 await cur.execute(
-                    "INSERT INTO users (name, surname, phone, company, job_title) VALUES (%s, %s, %s, %s, %s) RETURNING id",
-                    (user.name, user.surname, user.phone, user.company, user.job_title)
+                    """INSERT INTO users (name, surname, phone, company, job_title, role, department_id)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                    (user.name, user.surname, user.phone, user.company, user.job_title, user.role, user.department_id)
                 )
                 user_id = (await cur.fetchone())[0]
-        
-        token = create_access_token(user_id=user_id, phone=user.phone)
-        return {"status": "success", "user_id": user_id, "token": token}
-    
+
+        token = create_access_token(
+            user_id=user_id,
+            phone=user.phone,
+            role=user.role,
+            department_id=user.department_id
+        )
+        return {"status": "success", "user_id": user_id, "token": token, "role": user.role}
+
     except HTTPException:
         raise
     except Exception as e:
+        print(f"Registration error: {e}")
         raise HTTPException(status_code=500, detail="Ошибка регистрации")
 
 # =====================================================
