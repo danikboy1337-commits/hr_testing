@@ -631,14 +631,14 @@
                 const dateTo = document.getElementById('filterDateTo').value;
                 const search = document.getElementById('filterSearch').value;
 
-                if (spec) params.append('specialization_id', spec);
+                if (spec) params.append('specialization', spec);
                 if (level) params.append('level', level);
                 if (dateFrom) params.append('date_from', dateFrom);
                 if (dateTo) params.append('date_to', dateTo);
                 if (search) params.append('search', search);
 
                 const token = localStorage.getItem("halyk_token");
-                const response = await fetch("/api/manager/results?' + params.toString(), {
+                const response = await fetch("/api/manager/results?" + params.toString(), {
                     headers: { "Authorization": `Bearer ${token}` }
                 });
                 const data = await response.json();

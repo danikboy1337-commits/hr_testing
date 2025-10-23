@@ -30,7 +30,13 @@
             font-size: 24px;
         }
 
-        .logout-btn {
+        .header-actions {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .logout-btn, .back-btn {
             background: #dc3545;
             color: white;
             border: none;
@@ -38,10 +44,20 @@
             border-radius: 8px;
             cursor: pointer;
             font-weight: 600;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .back-btn {
+            background: #6c757d;
         }
 
         .logout-btn:hover {
             background: #c82333;
+        }
+
+        .back-btn:hover {
+            background: #5a6268;
         }
 
         .container {
@@ -193,7 +209,10 @@
 <body>
     <div class="header">
         <h1>🔐 HR Panel - База данных</h1>
-        <button class="logout-btn" onclick="logout()">Выйти</button>
+        <div class="header-actions">
+            <a href="/hr/menu" class="back-btn">◀ Назад</a>
+            <button class="logout-btn" onclick="logout()">Выйти</button>
+        </div>
     </div>
 
     <div class="container">

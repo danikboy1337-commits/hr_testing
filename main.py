@@ -1039,6 +1039,7 @@ async def execute_hr_sql(data: SQLQuery):
 @app.get("/api/hr/results")
 async def get_hr_results(
     specialization_id: Optional[int] = None,
+    specialization: Optional[str] = None,
     level: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
@@ -1081,6 +1082,10 @@ async def get_hr_results(
         if specialization_id:
             query += f" AND ust.specialization_id = ${param_count}"
             params.append(specialization_id)
+            param_count += 1
+        elif specialization:
+            query += f" AND s.name = ${param_count}"
+            params.append(specialization)
             param_count += 1
 
         if level:
@@ -1309,6 +1314,7 @@ def get_current_manager(authorization: Optional[str] = Header(None)):
 async def get_manager_results(
     manager: dict = Depends(get_current_manager),
     specialization_id: Optional[int] = None,
+    specialization: Optional[str] = None,
     level: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
@@ -1354,6 +1360,10 @@ async def get_manager_results(
         if specialization_id:
             query += f" AND ust.specialization_id = ${param_count}"
             params.append(specialization_id)
+            param_count += 1
+        elif specialization:
+            query += f" AND s.name = ${param_count}"
+            params.append(specialization)
             param_count += 1
 
         if level:
