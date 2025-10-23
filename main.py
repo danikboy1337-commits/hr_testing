@@ -185,6 +185,18 @@ async def generate_ai_recommendation(user_test_id: int):
         return "Рекомендация будет доступна позже."
 
 # =====================================================
+# API - PUBLIC CONFIG
+# =====================================================
+@app.get("/api/config")
+async def get_public_config():
+    """Return public configuration like reCAPTCHA site key"""
+    return {
+        "recaptcha_site_key": config.RECAPTCHA_SITE_KEY,
+        "org_name": config.ORG_NAME,
+        "org_logo": config.ORG_LOGO
+    }
+
+# =====================================================
 # HTML ROUTES - PUBLIC
 # =====================================================
 @app.get("/", response_class=HTMLResponse)
