@@ -62,8 +62,7 @@ async def create_sample_test_results():
                             SELECT t.id, c.id as competency_id
                             FROM topics t
                             JOIN competencies c ON t.competency_id = c.id
-                            JOIN specialization_competencies sc ON c.id = sc.competency_id
-                            WHERE sc.specialization_id = %s
+                            WHERE c.specialization_id = %s
                             ORDER BY RANDOM()
                             LIMIT 8
                         """, (spec_id,))
