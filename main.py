@@ -426,48 +426,39 @@ async def hr_login_page():
         return HTMLResponse(content=f.read())
 
 @app.get("/hr/menu", response_class=HTMLResponse)
-async def hr_menu_page(hr_user: dict = Depends(verify_hr_cookie)):
-    """HR меню - защищено"""
-    if not hr_user:
-        return RedirectResponse(url="/hr", status_code=303)
-    
+async def hr_menu_page():
+    """HR меню"""
     with open('templates/hr_menu.html', 'r', encoding='utf-8') as f:
         return HTMLResponse(content=f.read())
 
 @app.get("/hr/dashboard", response_class=HTMLResponse)
-async def hr_dashboard_page(hr_user: dict = Depends(verify_hr_cookie)):
-    """HR дашборд - защищено"""
-    if not hr_user:
-        return RedirectResponse(url="/hr", status_code=303)
-    
+async def hr_dashboard_page():
+    """HR дашборд"""
     with open('templates/dashboard.html', 'r', encoding='utf-8') as f:
         return HTMLResponse(content=f.read())
 
 @app.get("/hr/database", response_class=HTMLResponse)
-async def hr_database_page(hr_user: dict = Depends(verify_hr_cookie)):
-    """HR база данных - защищено"""
-    if not hr_user:
-        return RedirectResponse(url="/hr", status_code=303)
-    
+async def hr_database_page():
+    """HR база данных"""
     with open('templates/hr_panel.html', 'r', encoding='utf-8') as f:
         return HTMLResponse(content=f.read())
 
 @app.get("/hr/monitoring", response_class=HTMLResponse)
-async def hr_monitoring_page(hr_user: dict = Depends(verify_hr_cookie)):
-    """HR мониторинг - защищено"""
-    if not hr_user:
-        return RedirectResponse(url="/hr", status_code=303)
-
+async def hr_monitoring_page():
+    """HR мониторинг"""
     with open('templates/hr_monitoring.html', 'r', encoding='utf-8') as f:
         return HTMLResponse(content=f.read())
 
 @app.get("/hr/results", response_class=HTMLResponse)
-async def hr_results_page(hr_user: dict = Depends(verify_hr_cookie)):
-    """HR результаты тестов - защищено"""
-    if not hr_user:
-        return RedirectResponse(url="/hr", status_code=303)
-
+async def hr_results_page():
+    """HR результаты тестов"""
     with open('templates/hr_results.html', 'r', encoding='utf-8') as f:
+        return HTMLResponse(content=f.read())
+
+@app.get("/hr/diagnostic", response_class=HTMLResponse)
+async def hr_diagnostic_page():
+    """HR diagnostic tool"""
+    with open('templates/hr_diagnostic.html', 'r', encoding='utf-8') as f:
         return HTMLResponse(content=f.read())
 
 # =====================================================
