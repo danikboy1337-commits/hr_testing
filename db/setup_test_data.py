@@ -176,14 +176,22 @@ async def check_and_setup_test_data():
                             )
                             completed_at = started_at + timedelta(minutes=random.randint(20, 50))
 
-                            # Create test record
+                            # Create test record (skip if already exists)
                             await cur.execute("""
                                 INSERT INTO user_specialization_tests
                                 (user_id, specialization_id, score, max_score, started_at, completed_at)
                                 VALUES (%s, %s, %s, %s, %s, %s)
+                                ON CONFLICT (user_id, specialization_id) DO NOTHING
                                 RETURNING id
                             """, (emp_id, spec_id, score, max_score, started_at, completed_at))
-                            test_id = (await cur.fetchone())[0]
+                            result = await cur.fetchone()
+
+                            # Skip if test already existed
+                            if not result:
+                                print(f"      ⊘ {emp_name} {emp_surname}: {spec_name} - already exists, skipping")
+                                continue
+
+                            test_id = result[0]
 
                             # Insert topics
                             for idx, (topic_id, competency_id) in enumerate(topics, 1):
