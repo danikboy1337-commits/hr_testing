@@ -323,6 +323,31 @@ async def hr_results_page(hr_user: dict = Depends(verify_hr_cookie)):
         return HTMLResponse(content=f.read())
 
 # =====================================================
+# HTML ROUTES - MANAGER PANEL
+# =====================================================
+async def verify_manager_token(authorization: Optional[str] = Header(None)):
+    """Verify manager has valid token"""
+    if not authorization or not authorization.startswith('Bearer '):
+        return None
+    token = authorization.split(' ')[1]
+    user_data = verify_token(token)
+    if user_data and user_data.get("role") == "manager":
+        return user_data
+    return None
+
+@app.get("/manager/menu", response_class=HTMLResponse)
+async def manager_menu_page():
+    """Manager menu page"""
+    with open('templates/manager_menu.html', 'r', encoding='utf-8') as f:
+        return HTMLResponse(content=f.read())
+
+@app.get("/manager/results", response_class=HTMLResponse)
+async def manager_results_page():
+    """Manager results page"""
+    with open('templates/manager_results.html', 'r', encoding='utf-8') as f:
+        return HTMLResponse(content=f.read())
+
+# =====================================================
 # API - АУТЕНТИФИКАЦИЯ ПОЛЬЗОВАТЕЛЕЙ
 # =====================================================
 @app.post("/api/login")
@@ -1105,6 +1130,297 @@ async def get_hr_results_stats():
                     ],
                     "by_level": {row[0]: row[1] for row in by_level}
                 }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# =====================================================
+# API - MANAGER RESULTS (Department-filtered)
+# =====================================================
+def get_current_manager(authorization: Optional[str] = Header(None)):
+    """Extract manager info from token"""
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
+    token = authorization.split(' ')[1]
+    user_data = verify_token(token)
+    if not user_data or user_data.get("role") != "manager":
+        raise HTTPException(status_code=403, detail="Доступ только для менеджеров")
+    if not user_data.get("department_id"):
+        raise HTTPException(status_code=400, detail="У менеджера не указан отдел")
+    return user_data
+
+@app.get("/api/manager/results")
+async def get_manager_results(
+    manager: dict = Depends(get_current_manager),
+    specialization_id: Optional[int] = None,
+    level: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    search: Optional[str] = None
+):
+    """Get test results for manager's department only"""
+    department_id = manager.get("department_id")
+
+    try:
+        query = """
+            SELECT
+                ust.id as test_id,
+                u.id as user_id,
+                u.name,
+                u.surname,
+                u.phone,
+                u.company,
+                u.job_title,
+                s.name as specialization,
+                p.name as profile,
+                ust.score,
+                ust.max_score,
+                ROUND((ust.score::float / ust.max_score::float * 100), 2) as percentage,
+                CASE
+                    WHEN (ust.score::float / ust.max_score::float * 100) >= 67 THEN 'Senior'
+                    WHEN (ust.score::float / ust.max_score::float * 100) >= 34 THEN 'Middle'
+                    ELSE 'Junior'
+                END as level,
+                ust.started_at,
+                ust.completed_at,
+                EXTRACT(EPOCH FROM (ust.completed_at - ust.started_at)) as duration_seconds
+            FROM user_specialization_tests ust
+            JOIN users u ON ust.user_id = u.id
+            JOIN specializations s ON ust.specialization_id = s.id
+            JOIN profiles p ON s.profile_id = p.id
+            WHERE ust.completed_at IS NOT NULL
+            AND u.department_id = $1
+        """
+
+        params = [department_id]
+        param_count = 2
+
+        if specialization_id:
+            query += f" AND ust.specialization_id = ${param_count}"
+            params.append(specialization_id)
+            param_count += 1
+
+        if level:
+            if level == 'Senior':
+                query += " AND (ust.score::float / ust.max_score::float * 100) >= 67"
+            elif level == 'Middle':
+                query += " AND (ust.score::float / ust.max_score::float * 100) >= 34 AND (ust.score::float / ust.max_score::float * 100) < 67"
+            elif level == 'Junior':
+                query += " AND (ust.score::float / ust.max_score::float * 100) < 34"
+
+        if date_from:
+            query += f" AND ust.completed_at >= ${param_count}"
+            params.append(date_from)
+            param_count += 1
+
+        if date_to:
+            query += f" AND ust.completed_at <= ${param_count}"
+            params.append(date_to)
+            param_count += 1
+
+        if search:
+            query += f" AND (LOWER(u.name) LIKE LOWER(${param_count}) OR LOWER(u.surname) LIKE LOWER(${param_count}) OR LOWER(u.phone) LIKE LOWER(${param_count}))"
+            params.append(f"%{search}%")
+            param_count += 1
+
+        query += " ORDER BY ust.completed_at DESC"
+
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(query, tuple(params))
+                rows = await cur.fetchall()
+                columns = [desc[0] for desc in cur.description]
+
+                results = []
+                for row in rows:
+                    result = dict(zip(columns, row))
+                    if result['duration_seconds']:
+                        result['duration_minutes'] = round(result['duration_seconds'] / 60, 1)
+                    results.append(result)
+
+                return {"status": "success", "results": results, "count": len(results)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/manager/results/{test_id}")
+async def get_manager_result_detail(test_id: int, manager: dict = Depends(get_current_manager)):
+    """Get detailed information about a specific test (department check)"""
+    department_id = manager.get("department_id")
+
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Get test info with department check
+                await cur.execute("""
+                    SELECT
+                        ust.id,
+                        u.name,
+                        u.surname,
+                        u.phone,
+                        u.company,
+                        u.job_title,
+                        s.name as specialization,
+                        p.name as profile,
+                        ust.score,
+                        ust.max_score,
+                        ust.started_at,
+                        ust.completed_at,
+                        u.department_id
+                    FROM user_specialization_tests ust
+                    JOIN users u ON ust.user_id = u.id
+                    JOIN specializations s ON ust.specialization_id = s.id
+                    JOIN profiles p ON s.profile_id = p.id
+                    WHERE ust.id = $1
+                """, (test_id,))
+                test_info = await cur.fetchone()
+
+                if not test_info:
+                    raise HTTPException(status_code=404, detail="Test not found")
+
+                # Check department access
+                if test_info[12] != department_id:
+                    raise HTTPException(status_code=403, detail="Нет доступа к результатам из другого отдела")
+
+                # Get answers
+                await cur.execute("""
+                    SELECT
+                        c.name as competency,
+                        t.name as topic,
+                        q.question_text,
+                        q.level,
+                        q.var_1, q.var_2, q.var_3, q.var_4,
+                        q.correct_answer,
+                        ta.user_answer,
+                        ta.is_correct
+                    FROM test_answers ta
+                    JOIN questions q ON ta.question_id = q.id
+                    JOIN topics t ON q.topic_id = t.id
+                    JOIN competencies c ON t.competency_id = c.id
+                    WHERE ta.user_test_id = $1
+                    ORDER BY c.id, t.id, q.level
+                """, (test_id,))
+                answers = await cur.fetchall()
+
+                # Get AI recommendation
+                await cur.execute("""
+                    SELECT recommendation_text, created_at
+                    FROM ai_recommendations
+                    WHERE user_test_id = $1
+                """, (test_id,))
+                ai_rec = await cur.fetchone()
+
+                return {
+                    "status": "success",
+                    "test_info": {
+                        "id": test_info[0],
+                        "name": test_info[1],
+                        "surname": test_info[2],
+                        "phone": test_info[3],
+                        "company": test_info[4],
+                        "job_title": test_info[5],
+                        "specialization": test_info[6],
+                        "profile": test_info[7],
+                        "score": test_info[8],
+                        "max_score": test_info[9],
+                        "started_at": test_info[10],
+                        "completed_at": test_info[11]
+                    },
+                    "answers": [
+                        {
+                            "competency": ans[0],
+                            "topic": ans[1],
+                            "question": ans[2],
+                            "level": ans[3],
+                            "options": [ans[4], ans[5], ans[6], ans[7]],
+                            "correct_answer": ans[8],
+                            "user_answer": ans[9],
+                            "is_correct": ans[10]
+                        } for ans in answers
+                    ],
+                    "ai_recommendation": {
+                        "text": ai_rec[0] if ai_rec else None,
+                        "created_at": ai_rec[1] if ai_rec else None
+                    }
+                }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/manager/results/stats")
+async def get_manager_results_stats(manager: dict = Depends(get_current_manager)):
+    """Get statistical analysis for manager's department only"""
+    department_id = manager.get("department_id")
+
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Overall stats for department
+                await cur.execute("""
+                    SELECT
+                        COUNT(*) as total_tests,
+                        AVG(ust.score::float / ust.max_score::float * 100) as avg_percentage,
+                        MIN(ust.score::float / ust.max_score::float * 100) as min_percentage,
+                        MAX(ust.score::float / ust.max_score::float * 100) as max_percentage,
+                        AVG(EXTRACT(EPOCH FROM (ust.completed_at - ust.started_at)) / 60) as avg_duration_minutes
+                    FROM user_specialization_tests ust
+                    JOIN users u ON ust.user_id = u.id
+                    WHERE ust.completed_at IS NOT NULL
+                    AND u.department_id = $1
+                """, (department_id,))
+                overall = await cur.fetchone()
+
+                # By specialization (department only)
+                await cur.execute("""
+                    SELECT
+                        s.name,
+                        COUNT(*) as count,
+                        AVG(ust.score::float / ust.max_score::float * 100) as avg_percentage
+                    FROM user_specialization_tests ust
+                    JOIN users u ON ust.user_id = u.id
+                    JOIN specializations s ON ust.specialization_id = s.id
+                    WHERE ust.completed_at IS NOT NULL
+                    AND u.department_id = $1
+                    GROUP BY s.name
+                    ORDER BY count DESC
+                """, (department_id,))
+                by_spec = await cur.fetchall()
+
+                # By level (department only)
+                await cur.execute("""
+                    SELECT
+                        CASE
+                            WHEN (ust.score::float / ust.max_score::float * 100) >= 67 THEN 'Senior'
+                            WHEN (ust.score::float / ust.max_score::float * 100) >= 34 THEN 'Middle'
+                            ELSE 'Junior'
+                        END as level,
+                        COUNT(*) as count
+                    FROM user_specialization_tests ust
+                    JOIN users u ON ust.user_id = u.id
+                    WHERE ust.completed_at IS NOT NULL
+                    AND u.department_id = $1
+                    GROUP BY level
+                """, (department_id,))
+                by_level = await cur.fetchall()
+
+                return {
+                    "status": "success",
+                    "overall": {
+                        "total_tests": overall[0],
+                        "avg_percentage": round(overall[1], 2) if overall[1] else 0,
+                        "min_percentage": round(overall[2], 2) if overall[2] else 0,
+                        "max_percentage": round(overall[3], 2) if overall[3] else 0,
+                        "avg_duration_minutes": round(overall[4], 1) if overall[4] else 0
+                    },
+                    "by_specialization": [
+                        {"name": row[0], "count": row[1], "avg_percentage": round(row[2], 2)}
+                        for row in by_spec
+                    ],
+                    "by_level": {row[0]: row[1] for row in by_level}
+                }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

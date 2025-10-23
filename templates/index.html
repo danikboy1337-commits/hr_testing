@@ -251,7 +251,7 @@
             const [phone, setPhone] = useState('+');
             const [phoneError, setPhoneError] = useState('');
             const [formData, setFormData] = useState({
-                name: '', surname: '', phone: '', company: '', job_title: ''
+                name: '', surname: '', phone: '', company: '', job_title: '', role: 'employee', department_id: ''
             });
             const [profiles, setProfiles] = useState([]);
             const [selectedProfile, setSelectedProfile] = useState(null);
@@ -260,8 +260,9 @@
             const [loading, setLoading] = useState(false);
             const [userName, setUserName] = useState('');
             const [recaptchaSiteKey, setRecaptchaSiteKey] = useState('');
+            const [departments, setDepartments] = useState([]);
 
-            // Fetch reCAPTCHA site key from backend
+            // Fetch reCAPTCHA site key and departments from backend
             useEffect(() => {
                 fetch('/api/config')
                     .then(res => res.json())
@@ -269,6 +270,16 @@
                         setRecaptchaSiteKey(data.recaptcha_site_key);
                     })
                     .catch(err => console.error('Failed to load config:', err));
+
+                // Load departments
+                fetch('/api/departments')
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.departments) {
+                            setDepartments(data.departments);
+                        }
+                    })
+                    .catch(err => console.error('Failed to load departments:', err));
             }, []);
 
             // Render reCAPTCHA with dynamic site key
@@ -352,10 +363,11 @@
                         localStorage.setItem('halyk_token', data.token);
                         localStorage.setItem('halyk_user_id', data.user_id);
                         localStorage.setItem('halyk_user_name', data.name + ' ' + data.surname);
-                        
-                        setUserName(data.name + ' ' + data.surname);
-                        loadProfiles();
-                        loadMyTests();
+                        localStorage.setItem('halyk_user_role', data.role || 'employee');
+                        localStorage.setItem('halyk_user_department', data.department_id || '');
+
+                        // Redirect to panel selection page
+                        window.location.href = '/panels';
                     } else {
                         setFormData({...formData, phone});
                         setStep('register');
@@ -399,26 +411,28 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             ...formData,
+                            department_id: parseInt(formData.department_id),
                             recaptcha_token: recaptchaResponse
                         })
                     });
 
                     const data = await response.json();
-                    
+
                     if (response.status === 429) {
                         alert('Слишком много попыток. Попробуйте позже.');
                         grecaptcha.reset();
                         return;
                     }
-                    
+
                     if (data.status === 'success') {
                         localStorage.setItem('halyk_token', data.token);
                         localStorage.setItem('halyk_user_id', data.user_id);
                         localStorage.setItem('halyk_user_name', formData.name + ' ' + formData.surname);
-                        
-                        setUserName(formData.name + ' ' + formData.surname);
-                        loadProfiles();
-                        loadMyTests();
+                        localStorage.setItem('halyk_user_role', data.role || formData.role);
+                        localStorage.setItem('halyk_user_department', formData.department_id);
+
+                        // Redirect to panel selection page
+                        window.location.href = '/panels';
                     }
                 } catch (error) {
                     alert('Ошибка регистрации: ' + error.message);
@@ -619,6 +633,33 @@
                                         value={formData.job_title}
                                         onChange={(e) => setFormData({...formData, job_title: e.target.value})}
                                     />
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Роль *</label>
+                                    <select
+                                        value={formData.role}
+                                        onChange={(e) => setFormData({...formData, role: e.target.value})}
+                                        required
+                                    >
+                                        <option value="employee">Сотрудник</option>
+                                        <option value="hr">HR специалист</option>
+                                        <option value="manager">Менеджер</option>
+                                    </select>
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Отдел *</label>
+                                    <select
+                                        value={formData.department_id}
+                                        onChange={(e) => setFormData({...formData, department_id: e.target.value})}
+                                        required
+                                    >
+                                        <option value="">Выберите отдел</option>
+                                        {departments.map(dept => (
+                                            <option key={dept.id} value={dept.id}>{dept.name}</option>
+                                        ))}
+                                    </select>
                                 </div>
 
                                 {/* КАПЧА */}
