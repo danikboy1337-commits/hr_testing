@@ -12,7 +12,6 @@ if sys.platform == 'win32':
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from db.database import init_db_pool, close_db_pool, get_db_connection
-from auth import hash_password
 
 
 async def check_and_setup_test_data():
