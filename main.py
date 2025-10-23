@@ -213,6 +213,154 @@ async def get_departments():
         print(f"Error fetching departments: {e}")
         return {"status": "success", "departments": []}
 
+@app.get("/api/debug/me")
+async def debug_current_user(authorization: Optional[str] = Header(None)):
+    """Debug endpoint to check current user's token data"""
+    if not authorization or not authorization.startswith('Bearer '):
+        return {
+            "status": "error",
+            "message": "No authorization header found",
+            "help": "Include 'Authorization: Bearer <token>' header"
+        }
+
+    token = authorization.split(' ')[1]
+    user_data = verify_token(token)
+
+    if not user_data:
+        return {
+            "status": "error",
+            "message": "Invalid or expired token"
+        }
+
+    # Get full user info from database
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("""
+                    SELECT u.id, u.name, u.surname, u.phone, u.company, u.job_title,
+                           u.role, u.department_id, d.name as department_name
+                    FROM users u
+                    LEFT JOIN departments d ON u.department_id = d.id
+                    WHERE u.id = %s
+                """, (user_data.get("user_id"),))
+                user_row = await cur.fetchone()
+
+                if not user_row:
+                    return {
+                        "status": "error",
+                        "message": "User not found in database"
+                    }
+
+                return {
+                    "status": "success",
+                    "token_data": user_data,
+                    "database_data": {
+                        "id": user_row[0],
+                        "name": user_row[1],
+                        "surname": user_row[2],
+                        "phone": user_row[3],
+                        "company": user_row[4],
+                        "job_title": user_row[5],
+                        "role": user_row[6],
+                        "department_id": user_row[7],
+                        "department_name": user_row[8]
+                    },
+                    "permissions": {
+                        "can_access_test_panel": True,
+                        "can_access_hr_panel": user_row[6] == "hr",
+                        "can_access_manager_panel": user_row[6] == "manager"
+                    }
+                }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Database error: {str(e)}"
+        }
+
+@app.get("/api/admin/users")
+async def get_all_users(
+    role: Optional[str] = None,
+    department_id: Optional[int] = None
+):
+    """Admin endpoint to get all users (use with caution in production)"""
+    try:
+        query = """
+            SELECT u.id, u.name, u.surname, u.phone, u.company, u.job_title,
+                   u.role, u.department_id, d.name as department_name, u.registered_at,
+                   COUNT(DISTINCT ust.id) as completed_tests
+            FROM users u
+            LEFT JOIN departments d ON u.department_id = d.id
+            LEFT JOIN user_specialization_tests ust ON u.id = ust.user_id AND ust.completed_at IS NOT NULL
+        """
+
+        params = []
+        conditions = []
+        param_count = 1
+
+        if role:
+            conditions.append(f"u.role = ${param_count}")
+            params.append(role)
+            param_count += 1
+
+        if department_id:
+            conditions.append(f"u.department_id = ${param_count}")
+            params.append(department_id)
+            param_count += 1
+
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+
+        query += """
+            GROUP BY u.id, u.name, u.surname, u.phone, u.company, u.job_title,
+                     u.role, u.department_id, d.name, u.registered_at
+            ORDER BY u.registered_at DESC
+        """
+
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(query, tuple(params))
+                rows = await cur.fetchall()
+
+                users = []
+                for row in rows:
+                    users.append({
+                        "id": row[0],
+                        "name": row[1],
+                        "surname": row[2],
+                        "phone": row[3],
+                        "company": row[4],
+                        "job_title": row[5],
+                        "role": row[6],
+                        "department_id": row[7],
+                        "department_name": row[8],
+                        "registered_at": row[9].isoformat() if row[9] else None,
+                        "completed_tests": row[10]
+                    })
+
+                # Get statistics
+                await cur.execute("""
+                    SELECT
+                        COUNT(*) as total,
+                        COUNT(CASE WHEN role = 'employee' THEN 1 END) as employees,
+                        COUNT(CASE WHEN role = 'hr' THEN 1 END) as hr,
+                        COUNT(CASE WHEN role = 'manager' THEN 1 END) as managers
+                    FROM users
+                """)
+                stats = await cur.fetchone()
+
+                return {
+                    "status": "success",
+                    "users": users,
+                    "stats": {
+                        "total": stats[0],
+                        "employees": stats[1],
+                        "hr": stats[2],
+                        "managers": stats[3]
+                    }
+                }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 # =====================================================
 # HTML ROUTES - PUBLIC
 # =====================================================
@@ -345,6 +493,15 @@ async def manager_menu_page():
 async def manager_results_page():
     """Manager results page"""
     with open('templates/manager_results.html', 'r', encoding='utf-8') as f:
+        return HTMLResponse(content=f.read())
+
+# =====================================================
+# HTML ROUTES - ADMIN TOOLS
+# =====================================================
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_page():
+    """Admin tool for viewing all users"""
+    with open('templates/admin.html', 'r', encoding='utf-8') as f:
         return HTMLResponse(content=f.read())
 
 # =====================================================
