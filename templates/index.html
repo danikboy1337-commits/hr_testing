@@ -259,20 +259,31 @@
             const [myTests, setMyTests] = useState([]);
             const [loading, setLoading] = useState(false);
             const [userName, setUserName] = useState('');
+            const [recaptchaSiteKey, setRecaptchaSiteKey] = useState('');
 
-            // ВОТ СЮДА ВСТАВЬ:
+            // Fetch reCAPTCHA site key from backend
             useEffect(() => {
-                if (step === 'register' && window.recaptchaLoaded && typeof grecaptcha !== 'undefined') {
+                fetch('/api/config')
+                    .then(res => res.json())
+                    .then(data => {
+                        setRecaptchaSiteKey(data.recaptcha_site_key);
+                    })
+                    .catch(err => console.error('Failed to load config:', err));
+            }, []);
+
+            // Render reCAPTCHA with dynamic site key
+            useEffect(() => {
+                if (step === 'register' && window.recaptchaLoaded && typeof grecaptcha !== 'undefined' && recaptchaSiteKey) {
                     setTimeout(() => {
                         const widget = document.getElementById('recaptcha-widget');
                         if (widget && !widget.hasChildNodes()) {
                             grecaptcha.render('recaptcha-widget', {
-                                'sitekey': '6Lf-r-8rAAAAAI_2AAYKfUjF2uRqLzgljIaoEYYM'
+                                'sitekey': recaptchaSiteKey
                             });
                         }
                     }, 100);
                 }
-            }, [step]);
+            }, [step, recaptchaSiteKey]);
 
             useEffect(() => {
                 const token = localStorage.getItem('halyk_token');
