@@ -275,6 +275,13 @@
                 }
             }, [questions]);
 
+            useEffect(() => {
+                // Load competencies when test completes
+                if (completed && !showSelfAssessment && !selfAssessmentSubmitted) {
+                    loadCompetencies();
+                }
+            }, [completed, showSelfAssessment, selfAssessmentSubmitted]);
+
             const loadQuestions = async () => {
                 const token = sessionStorage.getItem('halyk_token');
                 if (!token) {
@@ -410,13 +417,6 @@
             }
 
             if (completed) {
-                // Load competencies when test completes
-                useEffect(() => {
-                    if (completed && !showSelfAssessment && !selfAssessmentSubmitted) {
-                        loadCompetencies();
-                    }
-                }, [completed]);
-
                 return (
                     <div className="test-container">
                         <div className="completion">
