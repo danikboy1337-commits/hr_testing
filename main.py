@@ -1137,6 +1137,72 @@ async def get_hr_results(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/hr/results/stats")
+async def get_hr_results_stats():
+    """Get statistical analysis of all results"""
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Overall stats
+                await cur.execute("""
+                    SELECT
+                        COUNT(*) as total_tests,
+                        AVG(score::numeric / max_score::numeric * 100) as avg_percentage,
+                        MIN(score::numeric / max_score::numeric * 100) as min_percentage,
+                        MAX(score::numeric / max_score::numeric * 100) as max_percentage,
+                        AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60) as avg_duration_minutes
+                    FROM user_specialization_tests
+                    WHERE completed_at IS NOT NULL
+                """)
+                overall = await cur.fetchone()
+
+                # By specialization
+                await cur.execute("""
+                    SELECT
+                        s.name,
+                        COUNT(*) as count,
+                        AVG(ust.score::numeric / ust.max_score::numeric * 100) as avg_percentage
+                    FROM user_specialization_tests ust
+                    JOIN specializations s ON ust.specialization_id = s.id
+                    WHERE ust.completed_at IS NOT NULL
+                    GROUP BY s.name
+                    ORDER BY count DESC
+                """)
+                by_spec = await cur.fetchall()
+
+                # By level
+                await cur.execute("""
+                    SELECT
+                        CASE
+                            WHEN (score::numeric / max_score::numeric * 100) >= 67 THEN 'Senior'
+                            WHEN (score::numeric / max_score::numeric * 100) >= 34 THEN 'Middle'
+                            ELSE 'Junior'
+                        END as level,
+                        COUNT(*) as count
+                    FROM user_specialization_tests
+                    WHERE completed_at IS NOT NULL
+                    GROUP BY level
+                """)
+                by_level = await cur.fetchall()
+
+                return {
+                    "status": "success",
+                    "overall": {
+                        "total_tests": overall[0],
+                        "avg_percentage": round(overall[1], 2) if overall[1] else 0,
+                        "min_percentage": round(overall[2], 2) if overall[2] else 0,
+                        "max_percentage": round(overall[3], 2) if overall[3] else 0,
+                        "avg_duration_minutes": round(overall[4], 1) if overall[4] else 0
+                    },
+                    "by_specialization": [
+                        {"name": row[0], "count": row[1], "avg_percentage": round(row[2], 2)}
+                        for row in by_spec
+                    ],
+                    "by_level": {row[0]: row[1] for row in by_level}
+                }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/hr/results/{test_id}")
 async def get_hr_result_detail(test_id: int):
     """Get detailed information about a specific test"""
@@ -1235,71 +1301,6 @@ async def get_hr_result_detail(test_id: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/hr/results/stats")
-async def get_hr_results_stats():
-    """Get statistical analysis of all results"""
-    try:
-        async with get_db_connection() as conn:
-            async with conn.cursor() as cur:
-                # Overall stats
-                await cur.execute("""
-                    SELECT
-                        COUNT(*) as total_tests,
-                        AVG(score::numeric / max_score::numeric * 100) as avg_percentage,
-                        MIN(score::numeric / max_score::numeric * 100) as min_percentage,
-                        MAX(score::numeric / max_score::numeric * 100) as max_percentage,
-                        AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60) as avg_duration_minutes
-                    FROM user_specialization_tests
-                    WHERE completed_at IS NOT NULL
-                """)
-                overall = await cur.fetchone()
-
-                # By specialization
-                await cur.execute("""
-                    SELECT
-                        s.name,
-                        COUNT(*) as count,
-                        AVG(ust.score::numeric / ust.max_score::numeric * 100) as avg_percentage
-                    FROM user_specialization_tests ust
-                    JOIN specializations s ON ust.specialization_id = s.id
-                    WHERE ust.completed_at IS NOT NULL
-                    GROUP BY s.name
-                    ORDER BY count DESC
-                """)
-                by_spec = await cur.fetchall()
-
-                # By level
-                await cur.execute("""
-                    SELECT
-                        CASE
-                            WHEN (score::numeric / max_score::numeric * 100) >= 67 THEN 'Senior'
-                            WHEN (score::numeric / max_score::numeric * 100) >= 34 THEN 'Middle'
-                            ELSE 'Junior'
-                        END as level,
-                        COUNT(*) as count
-                    FROM user_specialization_tests
-                    WHERE completed_at IS NOT NULL
-                    GROUP BY level
-                """)
-                by_level = await cur.fetchall()
-
-                return {
-                    "status": "success",
-                    "overall": {
-                        "total_tests": overall[0],
-                        "avg_percentage": round(overall[1], 2) if overall[1] else 0,
-                        "min_percentage": round(overall[2], 2) if overall[2] else 0,
-                        "max_percentage": round(overall[3], 2) if overall[3] else 0,
-                        "avg_duration_minutes": round(overall[4], 1) if overall[4] else 0
-                    },
-                    "by_specialization": [
-                        {"name": row[0], "count": row[1], "avg_percentage": round(row[2], 2)}
-                        for row in by_spec
-                    ],
-                    "by_level": {row[0]: row[1] for row in by_level}
-                }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 # =====================================================
 # API - MANAGER RESULTS (Department-filtered)
@@ -1416,6 +1417,83 @@ async def get_manager_results(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.get("/api/manager/results/stats")
+async def get_manager_results_stats(manager: dict = Depends(get_current_manager)):
+    """Get statistical analysis for manager's department only"""
+    department_id = manager.get("department_id")
+
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Overall stats for department
+                await cur.execute("""
+                    SELECT
+                        COUNT(*) as total_tests,
+                        AVG(ust.score::numeric / ust.max_score::numeric * 100) as avg_percentage,
+                        MIN(ust.score::numeric / ust.max_score::numeric * 100) as min_percentage,
+                        MAX(ust.score::numeric / ust.max_score::numeric * 100) as max_percentage,
+                        AVG(EXTRACT(EPOCH FROM (ust.completed_at - ust.started_at)) / 60) as avg_duration_minutes
+                    FROM user_specialization_tests ust
+                    JOIN users u ON ust.user_id = u.id
+                    WHERE ust.completed_at IS NOT NULL
+                    AND u.department_id = $1
+                """, (department_id,))
+                overall = await cur.fetchone()
+
+                # By specialization (department only)
+                await cur.execute("""
+                    SELECT
+                        s.name,
+                        COUNT(*) as count,
+                        AVG(ust.score::numeric / ust.max_score::numeric * 100) as avg_percentage
+                    FROM user_specialization_tests ust
+                    JOIN users u ON ust.user_id = u.id
+                    JOIN specializations s ON ust.specialization_id = s.id
+                    WHERE ust.completed_at IS NOT NULL
+                    AND u.department_id = $1
+                    GROUP BY s.name
+                    ORDER BY count DESC
+                """, (department_id,))
+                by_spec = await cur.fetchall()
+
+                # By level (department only)
+                await cur.execute("""
+                    SELECT
+                        CASE
+                            WHEN (ust.score::numeric / ust.max_score::numeric * 100) >= 67 THEN 'Senior'
+                            WHEN (ust.score::numeric / ust.max_score::numeric * 100) >= 34 THEN 'Middle'
+                            ELSE 'Junior'
+                        END as level,
+                        COUNT(*) as count
+                    FROM user_specialization_tests ust
+                    JOIN users u ON ust.user_id = u.id
+                    WHERE ust.completed_at IS NOT NULL
+                    AND u.department_id = $1
+                    GROUP BY level
+                """, (department_id,))
+                by_level = await cur.fetchall()
+
+                return {
+                    "status": "success",
+                    "overall": {
+                        "total_tests": overall[0],
+                        "avg_percentage": round(overall[1], 2) if overall[1] else 0,
+                        "min_percentage": round(overall[2], 2) if overall[2] else 0,
+                        "max_percentage": round(overall[3], 2) if overall[3] else 0,
+                        "avg_duration_minutes": round(overall[4], 1) if overall[4] else 0
+                    },
+                    "by_specialization": [
+                        {"name": row[0], "count": row[1], "avg_percentage": round(row[2], 2)}
+                        for row in by_spec
+                    ],
+                    "by_level": {row[0]: row[1] for row in by_level}
+                }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/manager/results/{test_id}")
 async def get_manager_result_detail(test_id: int, manager: dict = Depends(get_current_manager)):
     """Get detailed information about a specific test (department check)"""
@@ -1515,82 +1593,6 @@ async def get_manager_result_detail(test_id: int, manager: dict = Depends(get_cu
                         "text": ai_rec[0] if ai_rec else None,
                         "created_at": ai_rec[1] if ai_rec else None
                     }
-                }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/manager/results/stats")
-async def get_manager_results_stats(manager: dict = Depends(get_current_manager)):
-    """Get statistical analysis for manager's department only"""
-    department_id = manager.get("department_id")
-
-    try:
-        async with get_db_connection() as conn:
-            async with conn.cursor() as cur:
-                # Overall stats for department
-                await cur.execute("""
-                    SELECT
-                        COUNT(*) as total_tests,
-                        AVG(ust.score::numeric / ust.max_score::numeric * 100) as avg_percentage,
-                        MIN(ust.score::numeric / ust.max_score::numeric * 100) as min_percentage,
-                        MAX(ust.score::numeric / ust.max_score::numeric * 100) as max_percentage,
-                        AVG(EXTRACT(EPOCH FROM (ust.completed_at - ust.started_at)) / 60) as avg_duration_minutes
-                    FROM user_specialization_tests ust
-                    JOIN users u ON ust.user_id = u.id
-                    WHERE ust.completed_at IS NOT NULL
-                    AND u.department_id = $1
-                """, (department_id,))
-                overall = await cur.fetchone()
-
-                # By specialization (department only)
-                await cur.execute("""
-                    SELECT
-                        s.name,
-                        COUNT(*) as count,
-                        AVG(ust.score::numeric / ust.max_score::numeric * 100) as avg_percentage
-                    FROM user_specialization_tests ust
-                    JOIN users u ON ust.user_id = u.id
-                    JOIN specializations s ON ust.specialization_id = s.id
-                    WHERE ust.completed_at IS NOT NULL
-                    AND u.department_id = $1
-                    GROUP BY s.name
-                    ORDER BY count DESC
-                """, (department_id,))
-                by_spec = await cur.fetchall()
-
-                # By level (department only)
-                await cur.execute("""
-                    SELECT
-                        CASE
-                            WHEN (ust.score::numeric / ust.max_score::numeric * 100) >= 67 THEN 'Senior'
-                            WHEN (ust.score::numeric / ust.max_score::numeric * 100) >= 34 THEN 'Middle'
-                            ELSE 'Junior'
-                        END as level,
-                        COUNT(*) as count
-                    FROM user_specialization_tests ust
-                    JOIN users u ON ust.user_id = u.id
-                    WHERE ust.completed_at IS NOT NULL
-                    AND u.department_id = $1
-                    GROUP BY level
-                """, (department_id,))
-                by_level = await cur.fetchall()
-
-                return {
-                    "status": "success",
-                    "overall": {
-                        "total_tests": overall[0],
-                        "avg_percentage": round(overall[1], 2) if overall[1] else 0,
-                        "min_percentage": round(overall[2], 2) if overall[2] else 0,
-                        "max_percentage": round(overall[3], 2) if overall[3] else 0,
-                        "avg_duration_minutes": round(overall[4], 1) if overall[4] else 0
-                    },
-                    "by_specialization": [
-                        {"name": row[0], "count": row[1], "avg_percentage": round(row[2], 2)}
-                        for row in by_spec
-                    ],
-                    "by_level": {row[0]: row[1] for row in by_level}
                 }
     except HTTPException:
         raise
