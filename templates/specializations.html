@@ -303,7 +303,8 @@
 
         async function selectSpecialization(specializationId, specializationName) {
             try {
-                const response = await fetch('/api/select-specialization', {
+                // First, select the specialization (optional - for tracking)
+                await fetch('/api/select-specialization', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -314,16 +315,31 @@
                     })
                 });
 
-                if (!response.ok) {
-                    throw new Error('Failed to select specialization');
+                // Start the test and get user_test_id
+                const startResponse = await fetch('/api/start-test', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        specialization_id: specializationId
+                    })
+                });
+
+                if (!startResponse.ok) {
+                    const errorData = await startResponse.json();
+                    throw new Error(errorData.detail || 'Failed to start test');
                 }
 
-                // Redirect to test page
-                window.location.href = `/test?specialization_id=${specializationId}&name=${encodeURIComponent(specializationName)}`;
+                const data = await startResponse.json();
+
+                // Redirect to test page with user_test_id
+                window.location.href = `/test?user_test_id=${data.user_test_id}`;
 
             } catch (error) {
-                console.error('Error selecting specialization:', error);
-                alert('Ошибка при выборе специализации. Пожалуйста, попробуйте еще раз.');
+                console.error('Error starting test:', error);
+                alert('Ошибка при начале теста: ' + error.message + '\n\nПожалуйста, попробуйте еще раз.');
             }
         }
 
