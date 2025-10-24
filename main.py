@@ -501,6 +501,12 @@ async def manager_results_page():
     with open('templates/manager_results.html', 'r', encoding='utf-8') as f:
         return HTMLResponse(content=f.read())
 
+@app.get("/manager/ratings", response_class=HTMLResponse)
+async def manager_ratings_page():
+    """Manager employee ratings page"""
+    with open('templates/manager_ratings.html', 'r', encoding='utf-8') as f:
+        return HTMLResponse(content=f.read())
+
 # =====================================================
 # HTML ROUTES - ADMIN TOOLS
 # =====================================================
@@ -1592,6 +1598,216 @@ async def get_manager_result_detail(test_id: int, manager: dict = Depends(get_cu
                         "text": ai_rec[0] if ai_rec else None,
                         "created_at": ai_rec[1] if ai_rec else None
                     }
+                }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# =====================================================
+# API - EMPLOYEE RATINGS (Manager & HR access)
+# =====================================================
+
+class EmployeeRatingSubmit(BaseModel):
+    employee_id: int
+    rating: int
+    comment: Optional[str] = None
+
+@app.get("/api/manager/employees")
+async def get_manager_employees(manager: dict = Depends(get_current_manager)):
+    """Get list of employees in manager's department"""
+    department_id = manager.get("department_id")
+    manager_id = manager.get("user_id")
+
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("""
+                    SELECT
+                        u.id,
+                        u.name,
+                        u.surname,
+                        u.phone,
+                        u.job_title,
+                        u.company,
+                        d.name as department_name
+                    FROM users u
+                    LEFT JOIN departments d ON u.department_id = d.id
+                    WHERE u.department_id = %s
+                    AND u.role = 'employee'
+                    AND u.id != %s
+                    ORDER BY u.surname, u.name
+                """, (department_id, manager_id))
+                employees = await cur.fetchall()
+
+                return {
+                    "status": "success",
+                    "employees": [
+                        {
+                            "id": emp[0],
+                            "name": emp[1],
+                            "surname": emp[2],
+                            "phone": emp[3],
+                            "job_title": emp[4],
+                            "company": emp[5],
+                            "department": emp[6]
+                        } for emp in employees
+                    ]
+                }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/manager/ratings")
+async def get_manager_ratings(manager: dict = Depends(get_current_manager)):
+    """Get all ratings for employees in manager's department"""
+    department_id = manager.get("department_id")
+    manager_id = manager.get("user_id")
+
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("""
+                    SELECT
+                        er.id,
+                        er.employee_id,
+                        u.name,
+                        u.surname,
+                        u.job_title,
+                        er.rating,
+                        er.comment,
+                        er.created_at,
+                        er.updated_at
+                    FROM employee_ratings er
+                    JOIN users u ON er.employee_id = u.id
+                    WHERE u.department_id = %s
+                    AND er.manager_id = %s
+                    ORDER BY u.surname, u.name
+                """, (department_id, manager_id))
+                ratings = await cur.fetchall()
+
+                return {
+                    "status": "success",
+                    "ratings": [
+                        {
+                            "id": r[0],
+                            "employee_id": r[1],
+                            "employee_name": f"{r[2]} {r[3]}",
+                            "job_title": r[4],
+                            "rating": r[5],
+                            "comment": r[6],
+                            "created_at": r[7],
+                            "updated_at": r[8]
+                        } for r in ratings
+                    ]
+                }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/manager/rating")
+async def submit_employee_rating(data: EmployeeRatingSubmit, manager: dict = Depends(get_current_manager)):
+    """Submit or update employee rating"""
+    department_id = manager.get("department_id")
+    manager_id = manager.get("user_id")
+
+    # Validate rating range
+    if not (1 <= data.rating <= 10):
+        raise HTTPException(status_code=400, detail="Оценка должна быть от 1 до 10")
+
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Verify employee is in manager's department
+                await cur.execute("""
+                    SELECT department_id, role
+                    FROM users
+                    WHERE id = %s
+                """, (data.employee_id,))
+                employee = await cur.fetchone()
+
+                if not employee:
+                    raise HTTPException(status_code=404, detail="Сотрудник не найден")
+
+                if employee[0] != department_id:
+                    raise HTTPException(status_code=403, detail="Вы можете оценивать только сотрудников своего отдела")
+
+                if employee[1] != 'employee':
+                    raise HTTPException(status_code=400, detail="Можно оценивать только сотрудников")
+
+                # Insert or update rating
+                await cur.execute("""
+                    INSERT INTO employee_ratings (employee_id, manager_id, rating, comment)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (employee_id, manager_id)
+                    DO UPDATE SET
+                        rating = EXCLUDED.rating,
+                        comment = EXCLUDED.comment,
+                        updated_at = CURRENT_TIMESTAMP
+                    RETURNING id, created_at, updated_at
+                """, (data.employee_id, manager_id, data.rating, data.comment))
+
+                result = await cur.fetchone()
+
+                return {
+                    "status": "success",
+                    "rating_id": result[0],
+                    "message": "Оценка сохранена"
+                }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/hr/ratings")
+async def get_all_ratings(hr_user: dict = Depends(verify_hr_cookie)):
+    """Get all employee ratings (HR access only)"""
+
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute("""
+                    SELECT
+                        er.id,
+                        er.employee_id,
+                        emp.name as emp_name,
+                        emp.surname as emp_surname,
+                        emp.job_title,
+                        d.name as department_name,
+                        er.manager_id,
+                        mgr.name as mgr_name,
+                        mgr.surname as mgr_surname,
+                        er.rating,
+                        er.comment,
+                        er.created_at,
+                        er.updated_at
+                    FROM employee_ratings er
+                    JOIN users emp ON er.employee_id = emp.id
+                    LEFT JOIN departments d ON emp.department_id = d.id
+                    JOIN users mgr ON er.manager_id = mgr.id
+                    ORDER BY d.name, emp.surname, emp.name
+                """)
+                ratings = await cur.fetchall()
+
+                return {
+                    "status": "success",
+                    "ratings": [
+                        {
+                            "id": r[0],
+                            "employee_id": r[1],
+                            "employee_name": f"{r[2]} {r[3]}",
+                            "job_title": r[4],
+                            "department": r[5],
+                            "manager_id": r[6],
+                            "manager_name": f"{r[7]} {r[8]}",
+                            "rating": r[9],
+                            "comment": r[10],
+                            "created_at": r[11],
+                            "updated_at": r[12]
+                        } for r in ratings
+                    ]
                 }
     except HTTPException:
         raise
