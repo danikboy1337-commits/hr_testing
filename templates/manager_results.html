@@ -180,7 +180,8 @@
 
         .results-table {
             width: 100%;
-            border-collapse: collapse;
+            border-collapse: separate;
+            border-spacing: 0;
             min-width: 1200px;
         }
 
@@ -190,6 +191,10 @@
             top: 70px;
             z-index: 10;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .results-table tbody tr:first-child td {
+            border-top: 2px solid #e0e0e0;
         }
 
         .results-table th {
