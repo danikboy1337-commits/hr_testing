@@ -253,7 +253,11 @@
             const [completed, setCompleted] = useState(false);
             const [result, setResult] = useState(null);
             const [progress, setProgress] = useState(null);
-            
+            const [competencies, setCompetencies] = useState([]);
+            const [selfRatings, setSelfRatings] = useState({});
+            const [showSelfAssessment, setShowSelfAssessment] = useState(false);
+            const [selfAssessmentSubmitted, setSelfAssessmentSubmitted] = useState(false);
+
             const urlParams = new URLSearchParams(window.location.search);
             const userTestId = urlParams.get('user_test_id');
 
@@ -346,6 +350,54 @@
                 } catch (error) {
                     alert('Ошибка отправки ответа');
                     setLoading(false);
+                }
+            };
+
+            const loadCompetencies = async () => {
+                const token = sessionStorage.getItem('halyk_token');
+                try {
+                    const response = await fetch(`/api/test/${userTestId}/top-competencies`, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+                    const data = await response.json();
+                    if (data.status === 'success') {
+                        setCompetencies(data.competencies);
+                        setShowSelfAssessment(true);
+                    }
+                } catch (error) {
+                    console.error('Error loading competencies:', error);
+                }
+            };
+
+            const submitSelfAssessment = async () => {
+                const token = sessionStorage.getItem('halyk_token');
+                const assessments = Object.keys(selfRatings).map(compId => ({
+                    competency_id: parseInt(compId),
+                    self_rating: selfRatings[compId]
+                }));
+
+                if (assessments.length === 0) {
+                    alert('Пожалуйста, оцените хотя бы одну компетенцию');
+                    return;
+                }
+
+                try {
+                    const response = await fetch(`/api/test/${userTestId}/self-assessment`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({ assessments })
+                    });
+                    const data = await response.json();
+                    if (data.status === 'success') {
+                        setSelfAssessmentSubmitted(true);
+                    }
+                } catch (error) {
+                    alert('Ошибка отправки самооценки');
                 }
             };
 

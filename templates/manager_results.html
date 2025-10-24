@@ -189,8 +189,18 @@
             background: #f8f9fa;
             position: sticky;
             top: 70px;
-            z-index: 10;
+            z-index: 50;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .results-table thead::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: -1px;
+            height: 1px;
+            background: #f8f9fa;
         }
 
         .results-table tbody tr:first-child td {
@@ -205,6 +215,9 @@
             border-bottom: 2px solid #e0e0e0;
             font-size: 13px;
             text-transform: uppercase;
+            background: #f8f9fa;
+            position: relative;
+            z-index: 51;
         }
 
         .results-table td {

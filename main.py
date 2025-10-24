@@ -68,6 +68,9 @@ class AnswerSubmit(BaseModel):
     question_id: int
     user_answer: int
 
+class SelfAssessmentSubmit(BaseModel):
+    assessments: list[dict]  # [{"competency_id": 1, "self_rating": 8}, ...]
+
 class LoginRequest(BaseModel):
     phone: str
 
@@ -869,6 +872,112 @@ async def complete_test(user_test_id: int, current_user: dict = Depends(get_curr
             "score": score, "max_score": 24, "level": level,
             "recommendation": recommendation
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/test/{user_test_id}/top-competencies")
+async def get_top_competencies(user_test_id: int, current_user: dict = Depends(get_current_user)):
+    """Get top CORE competencies for self-assessment after test completion"""
+    user_id = current_user["user_id"]
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Verify test belongs to user and is completed
+                await cur.execute(
+                    "SELECT user_id, specialization_id, completed_at FROM user_specialization_tests WHERE id = %s",
+                    (user_test_id,)
+                )
+                test_data = await cur.fetchone()
+
+                if not test_data:
+                    raise HTTPException(status_code=404, detail="Test not found")
+                if test_data[0] != user_id:
+                    raise HTTPException(status_code=403, detail="Access denied")
+                if test_data[2] is None:
+                    raise HTTPException(status_code=400, detail="Test not yet completed")
+
+                specialization_id = test_data[1]
+
+                # Get top CORE competencies for this specialization
+                await cur.execute("""
+                    SELECT DISTINCT c.id, c.name, sc.importance_percentage
+                    FROM competencies c
+                    JOIN specialization_competencies sc ON sc.competency_id = c.id
+                    WHERE sc.specialization_id = %s
+                    AND sc.importance_percentage >= 80
+                    ORDER BY sc.importance_percentage DESC
+                    LIMIT 10
+                """, (specialization_id,))
+
+                competencies = []
+                for row in await cur.fetchall():
+                    competencies.append({
+                        "id": row[0],
+                        "name": row[1],
+                        "importance": row[2]
+                    })
+
+                return {
+                    "status": "success",
+                    "competencies": competencies
+                }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/test/{user_test_id}/self-assessment")
+async def submit_self_assessment(
+    user_test_id: int,
+    data: SelfAssessmentSubmit,
+    current_user: dict = Depends(get_current_user)
+):
+    """Submit self-assessment ratings for competencies"""
+    user_id = current_user["user_id"]
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Verify test belongs to user and is completed
+                await cur.execute(
+                    "SELECT user_id, completed_at FROM user_specialization_tests WHERE id = %s",
+                    (user_test_id,)
+                )
+                test_data = await cur.fetchone()
+
+                if not test_data:
+                    raise HTTPException(status_code=404, detail="Test not found")
+                if test_data[0] != user_id:
+                    raise HTTPException(status_code=403, detail="Access denied")
+                if test_data[1] is None:
+                    raise HTTPException(status_code=400, detail="Test not yet completed")
+
+                # Insert self-assessments
+                for assessment in data.assessments:
+                    competency_id = assessment.get("competency_id")
+                    self_rating = assessment.get("self_rating")
+
+                    if not competency_id or not self_rating:
+                        continue
+
+                    if self_rating < 1 or self_rating > 10:
+                        raise HTTPException(status_code=400, detail="Rating must be between 1 and 10")
+
+                    await cur.execute("""
+                        INSERT INTO competency_self_assessments
+                        (user_test_id, user_id, competency_id, self_rating)
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT (user_test_id, competency_id)
+                        DO UPDATE SET self_rating = EXCLUDED.self_rating
+                    """, (user_test_id, user_id, competency_id, self_rating))
+
+                await conn.commit()
+
+                return {
+                    "status": "success",
+                    "message": "Self-assessment submitted successfully"
+                }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
