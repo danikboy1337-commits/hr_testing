@@ -208,7 +208,6 @@
                 <a href="/hr/database" class="nav-btn">🗄️ База данных</a>
                 <a href="/hr/monitoring" class="nav-btn active">📈 Мониторинг</a>
             </div>
-            <button class="logout-btn" onclick="logout()">Выйти</button>
         </div>
     </div>
 
@@ -456,13 +455,6 @@
             }
         }
 
-        async function logout() {
-            await fetch('/api/hr/logout', {
-                method: 'POST',
-                credentials: 'include'
-            });
-            window.location.href = '/hr';
-        }
 
         // Инициализация
         initChart();

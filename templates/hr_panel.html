@@ -211,7 +211,6 @@
         <h1>🔐 HR Panel - База данных</h1>
         <div class="header-actions">
             <a href="/hr/menu" class="back-btn">◀ Назад</a>
-            <button class="logout-btn" onclick="logout()">Выйти</button>
         </div>
     </div>
 
@@ -411,14 +410,6 @@
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-        }
-
-        async function logout() {
-            await fetch('/api/hr/logout', {
-                method: 'POST',
-                credentials: 'include'
-            });
-            window.location.href = '/hr';
         }
 
         // Загрузка таблиц при старте

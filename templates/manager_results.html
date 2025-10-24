@@ -464,7 +464,6 @@
         <div class="header-actions">
             <button class="btn btn-primary" onclick="exportToCSV()">📥 Экспорт CSV</button>
             <a href="/manager/menu" class="btn btn-secondary">◀ Назад</a>
-            <button class="btn btn-danger" onclick="logout()">Выйти</button>
         </div>
     </div>
 
@@ -906,14 +905,6 @@
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-        }
-
-        async function logout() {
-            await fetch('/api/hr/logout', {
-                method: 'POST',
-                credentials: 'include'
-            });
-            window.location.href = '/hr';
         }
 
         // Close modal on outside click
