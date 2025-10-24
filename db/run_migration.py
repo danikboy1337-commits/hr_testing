@@ -2,6 +2,10 @@ import asyncio
 import sys
 import os
 
+# FIX для Windows - psycopg requires SelectorEventLoop
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
