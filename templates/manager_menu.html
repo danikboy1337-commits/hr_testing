@@ -138,10 +138,10 @@
         async function logout(e) {
             e.preventDefault();
 
-            localStorage.removeItem('halyk_token');
-            localStorage.removeItem('halyk_user_name');
-            localStorage.removeItem('halyk_user_role');
-            localStorage.removeItem('halyk_user_department');
+            sessionStorage.removeItem('halyk_token');
+            sessionStorage.removeItem('halyk_user_name');
+            sessionStorage.removeItem('halyk_user_role');
+            sessionStorage.removeItem('halyk_user_department');
             window.location.href = '/';
         }
     </script>

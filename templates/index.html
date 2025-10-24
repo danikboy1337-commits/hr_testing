@@ -297,9 +297,9 @@
             }, [step, recaptchaSiteKey]);
 
             useEffect(() => {
-                const token = localStorage.getItem('halyk_token');
+                const token = sessionStorage.getItem('halyk_token');
                 if (token) {
-                    const name = localStorage.getItem('halyk_user_name');
+                    const name = sessionStorage.getItem('halyk_user_name');
                     setUserName(name || '');
                     loadProfiles();
                     loadMyTests();
@@ -360,11 +360,11 @@
                     const data = await response.json();
                     
                     if (data.status === 'found') {
-                        localStorage.setItem('halyk_token', data.token);
-                        localStorage.setItem('halyk_user_id', data.user_id);
-                        localStorage.setItem('halyk_user_name', data.name + ' ' + data.surname);
-                        localStorage.setItem('halyk_user_role', data.role || 'employee');
-                        localStorage.setItem('halyk_user_department', data.department_id || '');
+                        sessionStorage.setItem('halyk_token', data.token);
+                        sessionStorage.setItem('halyk_user_id', data.user_id);
+                        sessionStorage.setItem('halyk_user_name', data.name + ' ' + data.surname);
+                        sessionStorage.setItem('halyk_user_role', data.role || 'employee');
+                        sessionStorage.setItem('halyk_user_department', data.department_id || '');
 
                         // Redirect to panel selection page
                         window.location.href = '/panels';
@@ -425,11 +425,11 @@
                     }
 
                     if (data.status === 'success') {
-                        localStorage.setItem('halyk_token', data.token);
-                        localStorage.setItem('halyk_user_id', data.user_id);
-                        localStorage.setItem('halyk_user_name', formData.name + ' ' + formData.surname);
-                        localStorage.setItem('halyk_user_role', data.role || formData.role);
-                        localStorage.setItem('halyk_user_department', formData.department_id);
+                        sessionStorage.setItem('halyk_token', data.token);
+                        sessionStorage.setItem('halyk_user_id', data.user_id);
+                        sessionStorage.setItem('halyk_user_name', formData.name + ' ' + formData.surname);
+                        sessionStorage.setItem('halyk_user_role', data.role || formData.role);
+                        sessionStorage.setItem('halyk_user_department', formData.department_id);
 
                         // Redirect to panel selection page
                         window.location.href = '/panels';
@@ -454,7 +454,7 @@
             };
 
             const loadMyTests = async () => {
-                const token = localStorage.getItem('halyk_token');
+                const token = sessionStorage.getItem('halyk_token');
                 try {
                     const response = await fetch('/api/my-specializations', {
                         headers: { 'Authorization': `Bearer ${token}` }
@@ -491,7 +491,7 @@
             };
 
             const handleSelectSpecialization = async (specialization) => {
-                const token = localStorage.getItem('halyk_token');
+                const token = sessionStorage.getItem('halyk_token');
 
                 try {
                     await fetch('/api/select-specialization', {
@@ -528,9 +528,9 @@
             };
 
             const handleLogout = () => {
-                localStorage.removeItem('halyk_token');
-                localStorage.removeItem('halyk_user_id');
-                localStorage.removeItem('halyk_user_name');
+                sessionStorage.removeItem('halyk_token');
+                sessionStorage.removeItem('halyk_user_id');
+                sessionStorage.removeItem('halyk_user_name');
                 setStep('phone');
                 setPhone('+');
                 setUserName('');

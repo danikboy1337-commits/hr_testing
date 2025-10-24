@@ -272,7 +272,7 @@
             }, [questions]);
 
             const loadQuestions = async () => {
-                const token = localStorage.getItem('halyk_token');
+                const token = sessionStorage.getItem('halyk_token');
                 if (!token) {
                     window.location.href = '/';
                     return;
@@ -305,7 +305,7 @@
                 if (selectedAnswer === null || loading) return;
                 
                 setLoading(true);
-                const token = localStorage.getItem('halyk_token');
+                const token = sessionStorage.getItem('halyk_token');
 
                 try {
                     // Отправляем ответ

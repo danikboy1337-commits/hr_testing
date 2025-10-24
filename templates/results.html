@@ -197,7 +197,7 @@
             }, []);
 
             const loadResults = async () => {
-                const token = localStorage.getItem('halyk_token');
+                const token = sessionStorage.getItem('halyk_token');
                 if (!token) {
                     window.location.href = '/';
                     return;
@@ -211,7 +211,7 @@
                     });
 
                     if (response.status === 401) {
-                        localStorage.clear();
+                        sessionStorage.clear();
                         window.location.href = '/';
                         return;
                     }

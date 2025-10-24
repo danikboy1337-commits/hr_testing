@@ -223,10 +223,10 @@
         let userDepartment = null;
 
         function logout() {
-            localStorage.removeItem('halyk_token');
-            localStorage.removeItem('halyk_user_name');
-            localStorage.removeItem('halyk_user_role');
-            localStorage.removeItem('halyk_user_department');
+            sessionStorage.removeItem('halyk_token');
+            sessionStorage.removeItem('halyk_user_name');
+            sessionStorage.removeItem('halyk_user_role');
+            sessionStorage.removeItem('halyk_user_department');
             window.location.href = '/';
         }
 
@@ -282,10 +282,10 @@
         }
 
         async function loadUserInfo() {
-            const token = localStorage.getItem('halyk_token');
-            const userName = localStorage.getItem('halyk_user_name');
-            const storedRole = localStorage.getItem('halyk_user_role');
-            const storedDept = localStorage.getItem('halyk_user_department');
+            const token = sessionStorage.getItem('halyk_token');
+            const userName = sessionStorage.getItem('halyk_user_name');
+            const storedRole = sessionStorage.getItem('halyk_user_role');
+            const storedDept = sessionStorage.getItem('halyk_user_department');
 
             if (!token) {
                 window.location.href = '/';

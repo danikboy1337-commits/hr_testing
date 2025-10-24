@@ -1305,7 +1305,7 @@ async def get_hr_result_detail(test_id: int):
 # =====================================================
 # API - MANAGER RESULTS (Department-filtered)
 # =====================================================
-def get_current_manager(authorization: Optional[str] = Header(None)):
+async def get_current_manager(authorization: Optional[str] = Header(None)):
     """Extract manager info from token"""
     if not authorization or not authorization.startswith('Bearer '):
         raise HTTPException(status_code=401, detail="Требуется авторизация")

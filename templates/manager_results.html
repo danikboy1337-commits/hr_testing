@@ -594,7 +594,7 @@
 
         async function loadStatistics() {
             try {
-                const token = localStorage.getItem("halyk_token");
+                const token = sessionStorage.getItem("halyk_token");
                 const response = await fetch("/api/manager/results/stats", {
                     headers: { "Authorization": `Bearer ${token}` }
                 });
@@ -636,7 +636,7 @@
                 if (dateTo) params.append('date_to', dateTo);
                 if (search) params.append('search', search);
 
-                const token = localStorage.getItem("halyk_token");
+                const token = sessionStorage.getItem("halyk_token");
                 const response = await fetch("/api/manager/results?" + params.toString(), {
                     headers: { "Authorization": `Bearer ${token}` }
                 });
@@ -700,7 +700,7 @@
             document.getElementById('modalBody').innerHTML = '<div class="loader">Загрузка...</div>';
 
             try {
-                const token = localStorage.getItem("halyk_token");
+                const token = sessionStorage.getItem("halyk_token");
                 const response = await fetch(`/api/manager/results/${testId}`, {
                     headers: { "Authorization": `Bearer ${token}` }
                 });

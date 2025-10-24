@@ -193,10 +193,10 @@
     </div>
 
     <script>
-        let userName = localStorage.getItem('halyk_user_name') || 'Пользователь';
-        let userRole = localStorage.getItem('halyk_user_role') || 'employee';
-        let userDepartment = localStorage.getItem('halyk_user_department') || '';
-        let token = localStorage.getItem('halyk_token');
+        let userName = sessionStorage.getItem('halyk_user_name') || 'Пользователь';
+        let userRole = sessionStorage.getItem('halyk_user_role') || 'employee';
+        let userDepartment = sessionStorage.getItem('halyk_user_department') || '';
+        let token = sessionStorage.getItem('halyk_token');
 
         // Display user info
         document.getElementById('userName').textContent = userName;
