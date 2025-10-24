@@ -1312,9 +1312,9 @@ async def get_current_manager(authorization: Optional[str] = Header(None)):
     token = authorization.split(' ')[1]
     user_data = verify_token(token)
     if not user_data or user_data.get("role") != "manager":
-        raise HTTPException(status_code=403, detail="Доступ только для менеджеров")
+        raise HTTPException(status_code=403, detail="Доступ только для руководителей")
     if not user_data.get("department_id"):
-        raise HTTPException(status_code=400, detail="У менеджера не указан отдел")
+        raise HTTPException(status_code=400, detail="У руководителя не указан отдел")
     return user_data
 
 @app.get("/api/manager/results")
@@ -1358,20 +1358,17 @@ async def get_manager_results(
             JOIN specializations s ON ust.specialization_id = s.id
             JOIN profiles p ON s.profile_id = p.id
             WHERE ust.completed_at IS NOT NULL
-            AND u.department_id = $1
+            AND u.department_id = %s
         """
 
         params = [department_id]
-        param_count = 2
 
         if specialization_id:
-            query += f" AND ust.specialization_id = ${param_count}"
+            query += " AND ust.specialization_id = %s"
             params.append(specialization_id)
-            param_count += 1
         elif specialization:
-            query += f" AND s.name = ${param_count}"
+            query += " AND s.name = %s"
             params.append(specialization)
-            param_count += 1
 
         if level:
             if level == 'Senior':
@@ -1382,19 +1379,17 @@ async def get_manager_results(
                 query += " AND (ust.score::numeric / ust.max_score::numeric * 100) < 34"
 
         if date_from:
-            query += f" AND ust.completed_at >= ${param_count}"
+            query += " AND ust.completed_at >= %s"
             params.append(date_from)
-            param_count += 1
 
         if date_to:
-            query += f" AND ust.completed_at <= ${param_count}"
+            query += " AND ust.completed_at <= %s"
             params.append(date_to)
-            param_count += 1
 
         if search:
-            query += f" AND (LOWER(u.name) LIKE LOWER(${param_count}) OR LOWER(u.surname) LIKE LOWER(${param_count}) OR LOWER(u.phone) LIKE LOWER(${param_count}))"
-            params.append(f"%{search}%")
-            param_count += 1
+            query += " AND (LOWER(u.name) LIKE LOWER(%s) OR LOWER(u.surname) LIKE LOWER(%s) OR LOWER(u.phone) LIKE LOWER(%s))"
+            search_param = f"%{search}%"
+            params.extend([search_param, search_param, search_param])
 
         query += " ORDER BY ust.completed_at DESC"
 
@@ -1402,6 +1397,10 @@ async def get_manager_results(
             async with conn.cursor() as cur:
                 await cur.execute(query, tuple(params))
                 rows = await cur.fetchall()
+
+                if not rows:
+                    return {"status": "success", "results": [], "count": 0}
+
                 columns = [desc[0] for desc in cur.description]
 
                 results = []
@@ -1437,7 +1436,7 @@ async def get_manager_results_stats(manager: dict = Depends(get_current_manager)
                     FROM user_specialization_tests ust
                     JOIN users u ON ust.user_id = u.id
                     WHERE ust.completed_at IS NOT NULL
-                    AND u.department_id = $1
+                    AND u.department_id = %s
                 """, (department_id,))
                 overall = await cur.fetchone()
 
@@ -1451,7 +1450,7 @@ async def get_manager_results_stats(manager: dict = Depends(get_current_manager)
                     JOIN users u ON ust.user_id = u.id
                     JOIN specializations s ON ust.specialization_id = s.id
                     WHERE ust.completed_at IS NOT NULL
-                    AND u.department_id = $1
+                    AND u.department_id = %s
                     GROUP BY s.name
                     ORDER BY count DESC
                 """, (department_id,))
@@ -1469,7 +1468,7 @@ async def get_manager_results_stats(manager: dict = Depends(get_current_manager)
                     FROM user_specialization_tests ust
                     JOIN users u ON ust.user_id = u.id
                     WHERE ust.completed_at IS NOT NULL
-                    AND u.department_id = $1
+                    AND u.department_id = %s
                     GROUP BY level
                 """, (department_id,))
                 by_level = await cur.fetchall()
@@ -1522,7 +1521,7 @@ async def get_manager_result_detail(test_id: int, manager: dict = Depends(get_cu
                     JOIN users u ON ust.user_id = u.id
                     JOIN specializations s ON ust.specialization_id = s.id
                     JOIN profiles p ON s.profile_id = p.id
-                    WHERE ust.id = $1
+                    WHERE ust.id = %s
                 """, (test_id,))
                 test_info = await cur.fetchone()
 
@@ -1548,7 +1547,7 @@ async def get_manager_result_detail(test_id: int, manager: dict = Depends(get_cu
                     JOIN questions q ON ta.question_id = q.id
                     JOIN topics t ON q.topic_id = t.id
                     JOIN competencies c ON t.competency_id = c.id
-                    WHERE ta.user_test_id = $1
+                    WHERE ta.user_test_id = %s
                     ORDER BY c.id, t.id, q.level
                 """, (test_id,))
                 answers = await cur.fetchall()
@@ -1557,7 +1556,7 @@ async def get_manager_result_detail(test_id: int, manager: dict = Depends(get_cu
                 await cur.execute("""
                     SELECT recommendation_text, created_at
                     FROM ai_recommendations
-                    WHERE user_test_id = $1
+                    WHERE user_test_id = %s
                 """, (test_id,))
                 ai_rec = await cur.fetchone()
 
