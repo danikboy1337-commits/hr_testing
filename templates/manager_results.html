@@ -595,28 +595,43 @@
         async function loadStatistics() {
             try {
                 const token = sessionStorage.getItem("halyk_token");
+                if (!token) {
+                    console.error('No token found');
+                    window.location.href = '/';
+                    return;
+                }
+
                 const response = await fetch("/api/manager/results/stats", {
                     headers: { "Authorization": `Bearer ${token}` }
                 });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
                 const data = await response.json();
 
-                document.getElementById('totalTests').textContent = data.overall.total_tests;
-                document.getElementById('avgScore').textContent = data.overall.avg_percentage + '%';
-                document.getElementById('seniorCount').textContent = data.by_level['Senior'] || 0;
-                document.getElementById('middleCount').textContent = data.by_level['Middle'] || 0;
-                document.getElementById('juniorCount').textContent = data.by_level['Junior'] || 0;
-                document.getElementById('avgDuration').textContent = data.overall.avg_duration_minutes;
+                if (data.status === 'success' && data.overall) {
+                    document.getElementById('totalTests').textContent = data.overall.total_tests;
+                    document.getElementById('avgScore').textContent = data.overall.avg_percentage + '%';
+                    document.getElementById('seniorCount').textContent = data.by_level['Senior'] || 0;
+                    document.getElementById('middleCount').textContent = data.by_level['Middle'] || 0;
+                    document.getElementById('juniorCount').textContent = data.by_level['Junior'] || 0;
+                    document.getElementById('avgDuration').textContent = data.overall.avg_duration_minutes;
 
-                // Populate specialization filter
-                const specFilter = document.getElementById('filterSpec');
-                data.by_specialization.forEach(spec => {
-                    const option = document.createElement('option');
-                    option.value = spec.name;
-                    option.textContent = `${spec.name} (${spec.count})`;
-                    specFilter.appendChild(option);
-                });
+                    // Populate specialization filter
+                    const specFilter = document.getElementById('filterSpec');
+                    data.by_specialization.forEach(spec => {
+                        const option = document.createElement('option');
+                        option.value = spec.name;
+                        option.textContent = `${spec.name} (${spec.count})`;
+                        specFilter.appendChild(option);
+                    });
+                }
             } catch (error) {
                 console.error('Error loading statistics:', error);
+                document.getElementById('totalTests').textContent = '❌';
+                document.getElementById('avgScore').textContent = 'Ошибка';
             }
         }
 
@@ -637,17 +652,33 @@
                 if (search) params.append('search', search);
 
                 const token = sessionStorage.getItem("halyk_token");
+                if (!token) {
+                    console.error('No token found');
+                    window.location.href = '/';
+                    return;
+                }
+
                 const response = await fetch("/api/manager/results?" + params.toString(), {
                     headers: { "Authorization": `Bearer ${token}` }
                 });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+
                 const data = await response.json();
 
-                allResults = data.results;
-                renderResults(data.results);
+                if (data.status === 'success' && data.results) {
+                    allResults = data.results;
+                    renderResults(data.results);
+                } else {
+                    throw new Error('Invalid response format');
+                }
             } catch (error) {
                 console.error('Error loading results:', error);
                 document.getElementById('resultsBody').innerHTML =
-                    '<tr><td colspan="12" class="empty-state"><div class="empty-state-icon">❌</div><div class="empty-state-text">Ошибка загрузки данных</div></td></tr>';
+                    `<tr><td colspan="12" class="empty-state"><div class="empty-state-icon">❌</div><div class="empty-state-text">Ошибка загрузки данных: ${error.message}</div></td></tr>`;
             }
         }
 
@@ -701,9 +732,18 @@
 
             try {
                 const token = sessionStorage.getItem("halyk_token");
+                if (!token) {
+                    throw new Error('No authentication token found');
+                }
+
                 const response = await fetch(`/api/manager/results/${testId}`, {
                     headers: { "Authorization": `Bearer ${token}` }
                 });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
                 const data = await response.json();
 
                 const info = data.test_info;
