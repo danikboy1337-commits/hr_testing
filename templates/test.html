@@ -277,7 +277,9 @@
 
             useEffect(() => {
                 // Load competencies when test completes
+                console.log('useEffect triggered - completed:', completed, 'showSelfAssessment:', showSelfAssessment, 'selfAssessmentSubmitted:', selfAssessmentSubmitted);
                 if (completed && !showSelfAssessment && !selfAssessmentSubmitted) {
+                    console.log('Triggering loadCompetencies()');
                     loadCompetencies();
                 }
             }, [completed, showSelfAssessment, selfAssessmentSubmitted]);
@@ -362,16 +364,22 @@
 
             const loadCompetencies = async () => {
                 const token = sessionStorage.getItem('halyk_token');
+                console.log('Loading competencies for test:', userTestId);
                 try {
                     const response = await fetch(`/api/test/${userTestId}/top-competencies`, {
                         headers: {
                             'Authorization': `Bearer ${token}`
                         }
                     });
+                    console.log('Competencies response status:', response.status);
                     const data = await response.json();
+                    console.log('Competencies data:', data);
                     if (data.status === 'success') {
+                        console.log('Found', data.competencies.length, 'competencies');
                         setCompetencies(data.competencies);
                         setShowSelfAssessment(true);
+                    } else {
+                        console.log('No competencies found or error in response');
                     }
                 } catch (error) {
                     console.error('Error loading competencies:', error);

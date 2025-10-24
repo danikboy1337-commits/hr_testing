@@ -142,31 +142,12 @@
 
         .results-table {
             width: 100%;
-            border-collapse: separate;
-            border-spacing: 0;
+            border-collapse: collapse;
             min-width: 1000px;
         }
 
         .results-table thead {
             background: #f8f9fa;
-            position: sticky;
-            top: 70px;
-            z-index: 50;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-
-        .results-table thead::after {
-            content: '';
-            position: absolute;
-            left: 0;
-            right: 0;
-            bottom: -1px;
-            height: 1px;
-            background: #f8f9fa;
-        }
-
-        .results-table tbody tr:first-child td {
-            border-top: 2px solid #e0e0e0;
         }
 
         .results-table th {
@@ -178,8 +159,6 @@
             font-size: 13px;
             text-transform: uppercase;
             background: #f8f9fa;
-            position: relative;
-            z-index: 51;
         }
 
         .results-table td {
@@ -190,7 +169,6 @@
 
         .results-table tbody tr {
             transition: all 0.2s;
-            background: white;
         }
 
         .results-table tbody tr:hover {
