@@ -470,6 +470,15 @@ async def hr_results_page(hr_user: dict = Depends(verify_hr_cookie)):
     with open('templates/hr_results.html', 'r', encoding='utf-8') as f:
         return HTMLResponse(content=f.read())
 
+@app.get("/hr/ratings", response_class=HTMLResponse)
+async def hr_ratings_page(hr_user: dict = Depends(verify_hr_cookie)):
+    """HR ratings page - protected"""
+    if not hr_user:
+        return RedirectResponse(url="/hr", status_code=303)
+
+    with open('templates/hr_ratings.html', 'r', encoding='utf-8') as f:
+        return HTMLResponse(content=f.read())
+
 @app.get("/hr/diagnostic", response_class=HTMLResponse)
 async def hr_diagnostic_page():
     """HR diagnostic tool"""
@@ -1335,6 +1344,7 @@ async def get_manager_results(
 ):
     """Get test results for manager's department only"""
     department_id = manager.get("department_id")
+    manager_id = manager.get("user_id")
 
     try:
         query = """
@@ -1358,16 +1368,19 @@ async def get_manager_results(
                 END as level,
                 ust.started_at,
                 ust.completed_at,
-                EXTRACT(EPOCH FROM (ust.completed_at - ust.started_at)) as duration_seconds
+                EXTRACT(EPOCH FROM (ust.completed_at - ust.started_at)) as duration_seconds,
+                er.rating as employee_rating,
+                er.comment as rating_comment
             FROM user_specialization_tests ust
             JOIN users u ON ust.user_id = u.id
             JOIN specializations s ON ust.specialization_id = s.id
             JOIN profiles p ON s.profile_id = p.id
+            LEFT JOIN employee_ratings er ON er.employee_id = u.id AND er.manager_id = %s
             WHERE ust.completed_at IS NOT NULL
             AND u.department_id = %s
         """
 
-        params = [department_id]
+        params = [manager_id, department_id]
 
         if specialization_id:
             query += " AND ust.specialization_id = %s"
