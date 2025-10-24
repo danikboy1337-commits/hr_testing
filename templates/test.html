@@ -410,6 +410,13 @@
             }
 
             if (completed) {
+                // Load competencies when test completes
+                useEffect(() => {
+                    if (completed && !showSelfAssessment && !selfAssessmentSubmitted) {
+                        loadCompetencies();
+                    }
+                }, [completed]);
+
                 return (
                     <div className="test-container">
                         <div className="completion">
@@ -418,7 +425,7 @@
                                 {result.score}/{result.max_score}
                             </div>
                             <div className="level-badge">{result.level}</div>
-                            
+
                             {!result.recommendation && (
                                 <div style={{
                                     marginTop: '30px',
@@ -435,7 +442,7 @@
                                     </p>
                                 </div>
                             )}
-                            
+
                             {result.recommendation && (
                                 <div style={{
                                     marginTop: '30px',
@@ -447,19 +454,169 @@
                                     <h3 style={{color: '#1DB584', marginBottom: '12px'}}>
                                         💡 Рекомендация AI
                                     </h3>
-                                    <p style={{color: '#333', fontSize: '16px', lineHeight: '1.6'}}>
+                                    <p style={{color: '#333', fontSize: '16px', lineHeight: '1.6', whiteSpace: 'pre-wrap'}}>
                                         {result.recommendation}
                                     </p>
                                 </div>
                             )}
-                            
-                            <button 
-                                className="btn" 
-                                onClick={() => window.location.href = '/'}
-                                style={{marginTop: '30px'}}
-                            >
-                                На главную
-                            </button>
+
+                            {/* Self-Assessment Section */}
+                            {showSelfAssessment && !selfAssessmentSubmitted && competencies.length > 0 && (
+                                <div style={{
+                                    marginTop: '30px',
+                                    padding: '25px',
+                                    background: '#fff',
+                                    borderRadius: '12px',
+                                    border: '2px solid #f5576c',
+                                    boxShadow: '0 4px 12px rgba(245, 87, 108, 0.1)'
+                                }}>
+                                    <h3 style={{color: '#f5576c', marginBottom: '15px', fontSize: '20px'}}>
+                                        ⭐ Самооценка ключевых компетенций
+                                    </h3>
+                                    <p style={{color: '#666', marginBottom: '25px', fontSize: '15px'}}>
+                                        Оцените свой уровень владения основными компетенциями по шкале от 1 до 10
+                                    </p>
+
+                                    {competencies.map(comp => (
+                                        <div key={comp.id} style={{
+                                            marginBottom: '25px',
+                                            padding: '20px',
+                                            background: '#f8f9fa',
+                                            borderRadius: '10px'
+                                        }}>
+                                            <div style={{
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center',
+                                                marginBottom: '15px',
+                                                flexWrap: 'wrap'
+                                            }}>
+                                                <div style={{flex: 1, minWidth: '200px'}}>
+                                                    <strong style={{fontSize: '15px', color: '#333'}}>
+                                                        {comp.name}
+                                                    </strong>
+                                                    <span style={{
+                                                        marginLeft: '10px',
+                                                        padding: '4px 10px',
+                                                        background: '#f5576c',
+                                                        color: 'white',
+                                                        borderRadius: '12px',
+                                                        fontSize: '12px',
+                                                        fontWeight: 'bold'
+                                                    }}>
+                                                        CORE {comp.importance}%
+                                                    </span>
+                                                </div>
+                                                {selfRatings[comp.id] && (
+                                                    <div style={{
+                                                        marginTop: '8px',
+                                                        padding: '6px 14px',
+                                                        background: '#1DB584',
+                                                        color: 'white',
+                                                        borderRadius: '20px',
+                                                        fontSize: '14px',
+                                                        fontWeight: 'bold'
+                                                    }}>
+                                                        Выбрано: {selfRatings[comp.id]}/10
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div style={{
+                                                display: 'flex',
+                                                gap: '8px',
+                                                flexWrap: 'wrap',
+                                                justifyContent: 'center'
+                                            }}>
+                                                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(rating => (
+                                                    <button
+                                                        key={rating}
+                                                        onClick={() => setSelfRatings({...selfRatings, [comp.id]: rating})}
+                                                        style={{
+                                                            minWidth: '45px',
+                                                            height: '45px',
+                                                            borderRadius: '8px',
+                                                            border: '2px solid',
+                                                            borderColor: selfRatings[comp.id] === rating ? '#f5576c' : '#ddd',
+                                                            background: selfRatings[comp.id] === rating
+                                                                ? 'linear-gradient(135deg, #f5576c 0%, #f093fb 100%)'
+                                                                : 'white',
+                                                            color: selfRatings[comp.id] === rating ? 'white' : '#333',
+                                                            fontSize: '16px',
+                                                            fontWeight: 'bold',
+                                                            cursor: 'pointer',
+                                                            transition: 'all 0.2s',
+                                                            transform: selfRatings[comp.id] === rating ? 'scale(1.1)' : 'scale(1)'
+                                                        }}
+                                                        onMouseEnter={(e) => {
+                                                            if (selfRatings[comp.id] !== rating) {
+                                                                e.target.style.borderColor = '#f5576c';
+                                                                e.target.style.background = '#fff5f7';
+                                                            }
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            if (selfRatings[comp.id] !== rating) {
+                                                                e.target.style.borderColor = '#ddd';
+                                                                e.target.style.background = 'white';
+                                                            }
+                                                        }}
+                                                    >
+                                                        {rating}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+
+                                    <button
+                                        className="btn"
+                                        onClick={submitSelfAssessment}
+                                        style={{
+                                            width: '100%',
+                                            marginTop: '20px',
+                                            padding: '15px',
+                                            fontSize: '16px',
+                                            fontWeight: 'bold',
+                                            background: Object.keys(selfRatings).length === competencies.length
+                                                ? 'linear-gradient(135deg, #f5576c 0%, #f093fb 100%)'
+                                                : '#ccc',
+                                            cursor: Object.keys(selfRatings).length === competencies.length
+                                                ? 'pointer'
+                                                : 'not-allowed'
+                                        }}
+                                        disabled={Object.keys(selfRatings).length !== competencies.length}
+                                    >
+                                        Отправить самооценку ({Object.keys(selfRatings).length}/{competencies.length})
+                                    </button>
+                                </div>
+                            )}
+
+                            {selfAssessmentSubmitted && (
+                                <div style={{
+                                    marginTop: '30px',
+                                    padding: '20px',
+                                    background: '#f0fff4',
+                                    borderRadius: '12px',
+                                    border: '2px solid #38a169'
+                                }}>
+                                    <h3 style={{color: '#38a169', marginBottom: '10px'}}>
+                                        ✅ Самооценка отправлена
+                                    </h3>
+                                    <p style={{color: '#666'}}>
+                                        Спасибо за вашу самооценку! Ваши результаты сохранены.
+                                    </p>
+                                </div>
+                            )}
+
+                            {(selfAssessmentSubmitted || competencies.length === 0) && (
+                                <button
+                                    className="btn"
+                                    onClick={() => window.location.href = '/'}
+                                    style={{marginTop: '30px'}}
+                                >
+                                    На главную
+                                </button>
+                            )}
                         </div>
                     </div>
                 );
