@@ -48,9 +48,9 @@ async def diagnose_hr_results():
                 await cur.execute("""
                     SELECT
                         COUNT(*) as total_tests,
-                        AVG(score::float / max_score::float * 100) as avg_percentage,
-                        MIN(score::float / max_score::float * 100) as min_percentage,
-                        MAX(score::float / max_score::float * 100) as max_percentage,
+                        AVG(score::numeric / max_score::numeric * 100) as avg_percentage,
+                        MIN(score::numeric / max_score::numeric * 100) as min_percentage,
+                        MAX(score::numeric / max_score::numeric * 100) as max_percentage,
                         AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60) as avg_duration_minutes
                     FROM user_specialization_tests
                     WHERE completed_at IS NOT NULL
@@ -70,8 +70,8 @@ async def diagnose_hr_results():
                 await cur.execute("""
                     SELECT
                         CASE
-                            WHEN (score::float / max_score::float * 100) >= 67 THEN 'Senior'
-                            WHEN (score::float / max_score::float * 100) >= 34 THEN 'Middle'
+                            WHEN (score::numeric / max_score::numeric * 100) >= 67 THEN 'Senior'
+                            WHEN (score::numeric / max_score::numeric * 100) >= 34 THEN 'Middle'
                             ELSE 'Junior'
                         END as level,
                         COUNT(*) as count
@@ -99,7 +99,7 @@ async def diagnose_hr_results():
                         s.name as specialization,
                         ust.score,
                         ust.max_score,
-                        ROUND((ust.score::float / ust.max_score::float * 100), 2) as percentage
+                        ROUND((ust.score::numeric / ust.max_score::numeric * 100), 2) as percentage
                     FROM user_specialization_tests ust
                     JOIN users u ON ust.user_id = u.id
                     JOIN specializations s ON ust.specialization_id = s.id

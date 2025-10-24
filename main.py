@@ -914,8 +914,8 @@ async def get_dashboard_stats():
                 
                 await cur.execute("""
                     SELECT 
-                        CASE WHEN (score::float / max_score * 100) >= 80 THEN 'Senior'
-                             WHEN (score::float / max_score * 100) >= 50 THEN 'Middle'
+                        CASE WHEN (score::numeric / max_score * 100) >= 80 THEN 'Senior'
+                             WHEN (score::numeric / max_score * 100) >= 50 THEN 'Middle'
                              ELSE 'Junior' END as level,
                         COUNT(*) as count
                     FROM user_specialization_tests
@@ -1066,10 +1066,10 @@ async def get_hr_results(
                 p.name as profile,
                 ust.score,
                 ust.max_score,
-                ROUND((ust.score::float / ust.max_score::float * 100), 2) as percentage,
+                ROUND((ust.score::numeric / ust.max_score::numeric * 100), 2) as percentage,
                 CASE
-                    WHEN (ust.score::float / ust.max_score::float * 100) >= 67 THEN 'Senior'
-                    WHEN (ust.score::float / ust.max_score::float * 100) >= 34 THEN 'Middle'
+                    WHEN (ust.score::numeric / ust.max_score::numeric * 100) >= 67 THEN 'Senior'
+                    WHEN (ust.score::numeric / ust.max_score::numeric * 100) >= 34 THEN 'Middle'
                     ELSE 'Junior'
                 END as level,
                 ust.started_at,
@@ -1096,11 +1096,11 @@ async def get_hr_results(
 
         if level:
             if level == 'Senior':
-                query += " AND (ust.score::float / ust.max_score::float * 100) >= 67"
+                query += " AND (ust.score::numeric / ust.max_score::numeric * 100) >= 67"
             elif level == 'Middle':
-                query += " AND (ust.score::float / ust.max_score::float * 100) >= 34 AND (ust.score::float / ust.max_score::float * 100) < 67"
+                query += " AND (ust.score::numeric / ust.max_score::numeric * 100) >= 34 AND (ust.score::numeric / ust.max_score::numeric * 100) < 67"
             elif level == 'Junior':
-                query += " AND (ust.score::float / ust.max_score::float * 100) < 34"
+                query += " AND (ust.score::numeric / ust.max_score::numeric * 100) < 34"
 
         if date_from:
             query += f" AND ust.completed_at >= ${param_count}"
@@ -1245,9 +1245,9 @@ async def get_hr_results_stats():
                 await cur.execute("""
                     SELECT
                         COUNT(*) as total_tests,
-                        AVG(score::float / max_score::float * 100) as avg_percentage,
-                        MIN(score::float / max_score::float * 100) as min_percentage,
-                        MAX(score::float / max_score::float * 100) as max_percentage,
+                        AVG(score::numeric / max_score::numeric * 100) as avg_percentage,
+                        MIN(score::numeric / max_score::numeric * 100) as min_percentage,
+                        MAX(score::numeric / max_score::numeric * 100) as max_percentage,
                         AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60) as avg_duration_minutes
                     FROM user_specialization_tests
                     WHERE completed_at IS NOT NULL
@@ -1259,7 +1259,7 @@ async def get_hr_results_stats():
                     SELECT
                         s.name,
                         COUNT(*) as count,
-                        AVG(ust.score::float / ust.max_score::float * 100) as avg_percentage
+                        AVG(ust.score::numeric / ust.max_score::numeric * 100) as avg_percentage
                     FROM user_specialization_tests ust
                     JOIN specializations s ON ust.specialization_id = s.id
                     WHERE ust.completed_at IS NOT NULL
@@ -1272,8 +1272,8 @@ async def get_hr_results_stats():
                 await cur.execute("""
                     SELECT
                         CASE
-                            WHEN (score::float / max_score::float * 100) >= 67 THEN 'Senior'
-                            WHEN (score::float / max_score::float * 100) >= 34 THEN 'Middle'
+                            WHEN (score::numeric / max_score::numeric * 100) >= 67 THEN 'Senior'
+                            WHEN (score::numeric / max_score::numeric * 100) >= 34 THEN 'Middle'
                             ELSE 'Junior'
                         END as level,
                         COUNT(*) as count
@@ -1343,10 +1343,10 @@ async def get_manager_results(
                 p.name as profile,
                 ust.score,
                 ust.max_score,
-                ROUND((ust.score::float / ust.max_score::float * 100), 2) as percentage,
+                ROUND((ust.score::numeric / ust.max_score::numeric * 100), 2) as percentage,
                 CASE
-                    WHEN (ust.score::float / ust.max_score::float * 100) >= 67 THEN 'Senior'
-                    WHEN (ust.score::float / ust.max_score::float * 100) >= 34 THEN 'Middle'
+                    WHEN (ust.score::numeric / ust.max_score::numeric * 100) >= 67 THEN 'Senior'
+                    WHEN (ust.score::numeric / ust.max_score::numeric * 100) >= 34 THEN 'Middle'
                     ELSE 'Junior'
                 END as level,
                 ust.started_at,
@@ -1374,11 +1374,11 @@ async def get_manager_results(
 
         if level:
             if level == 'Senior':
-                query += " AND (ust.score::float / ust.max_score::float * 100) >= 67"
+                query += " AND (ust.score::numeric / ust.max_score::numeric * 100) >= 67"
             elif level == 'Middle':
-                query += " AND (ust.score::float / ust.max_score::float * 100) >= 34 AND (ust.score::float / ust.max_score::float * 100) < 67"
+                query += " AND (ust.score::numeric / ust.max_score::numeric * 100) >= 34 AND (ust.score::numeric / ust.max_score::numeric * 100) < 67"
             elif level == 'Junior':
-                query += " AND (ust.score::float / ust.max_score::float * 100) < 34"
+                query += " AND (ust.score::numeric / ust.max_score::numeric * 100) < 34"
 
         if date_from:
             query += f" AND ust.completed_at >= ${param_count}"
@@ -1533,9 +1533,9 @@ async def get_manager_results_stats(manager: dict = Depends(get_current_manager)
                 await cur.execute("""
                     SELECT
                         COUNT(*) as total_tests,
-                        AVG(ust.score::float / ust.max_score::float * 100) as avg_percentage,
-                        MIN(ust.score::float / ust.max_score::float * 100) as min_percentage,
-                        MAX(ust.score::float / ust.max_score::float * 100) as max_percentage,
+                        AVG(ust.score::numeric / ust.max_score::numeric * 100) as avg_percentage,
+                        MIN(ust.score::numeric / ust.max_score::numeric * 100) as min_percentage,
+                        MAX(ust.score::numeric / ust.max_score::numeric * 100) as max_percentage,
                         AVG(EXTRACT(EPOCH FROM (ust.completed_at - ust.started_at)) / 60) as avg_duration_minutes
                     FROM user_specialization_tests ust
                     JOIN users u ON ust.user_id = u.id
@@ -1549,7 +1549,7 @@ async def get_manager_results_stats(manager: dict = Depends(get_current_manager)
                     SELECT
                         s.name,
                         COUNT(*) as count,
-                        AVG(ust.score::float / ust.max_score::float * 100) as avg_percentage
+                        AVG(ust.score::numeric / ust.max_score::numeric * 100) as avg_percentage
                     FROM user_specialization_tests ust
                     JOIN users u ON ust.user_id = u.id
                     JOIN specializations s ON ust.specialization_id = s.id
@@ -1564,8 +1564,8 @@ async def get_manager_results_stats(manager: dict = Depends(get_current_manager)
                 await cur.execute("""
                     SELECT
                         CASE
-                            WHEN (ust.score::float / ust.max_score::float * 100) >= 67 THEN 'Senior'
-                            WHEN (ust.score::float / ust.max_score::float * 100) >= 34 THEN 'Middle'
+                            WHEN (ust.score::numeric / ust.max_score::numeric * 100) >= 67 THEN 'Senior'
+                            WHEN (ust.score::numeric / ust.max_score::numeric * 100) >= 34 THEN 'Middle'
                             ELSE 'Junior'
                         END as level,
                         COUNT(*) as count
