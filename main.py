@@ -1205,7 +1205,18 @@ async def get_hr_results(
                 END as level,
                 ust.started_at,
                 ust.completed_at,
-                EXTRACT(EPOCH FROM (ust.completed_at - ust.started_at)) as duration_seconds
+                EXTRACT(EPOCH FROM (ust.completed_at - ust.started_at)) as duration_seconds,
+                (
+                    SELECT json_agg(json_build_object(
+                        'competency_id', csa.competency_id,
+                        'competency_name', c.name,
+                        'self_rating', csa.self_rating,
+                        'importance', c.importance
+                    ) ORDER BY c.importance DESC)
+                    FROM competency_self_assessments csa
+                    JOIN competencies c ON csa.competency_id = c.id
+                    WHERE csa.user_test_id = ust.id
+                ) as self_assessments
             FROM user_specialization_tests ust
             JOIN users u ON ust.user_id = u.id
             JOIN specializations s ON ust.specialization_id = s.id
@@ -1214,16 +1225,13 @@ async def get_hr_results(
         """
 
         params = []
-        param_count = 1
 
         if specialization_id:
-            query += f" AND ust.specialization_id = ${param_count}"
+            query += " AND ust.specialization_id = %s"
             params.append(specialization_id)
-            param_count += 1
         elif specialization:
-            query += f" AND s.name = ${param_count}"
+            query += " AND s.name = %s"
             params.append(specialization)
-            param_count += 1
 
         if level:
             if level == 'Senior':
@@ -1234,19 +1242,17 @@ async def get_hr_results(
                 query += " AND (ust.score::numeric / ust.max_score::numeric * 100) < 34"
 
         if date_from:
-            query += f" AND ust.completed_at >= ${param_count}"
+            query += " AND ust.completed_at >= %s"
             params.append(date_from)
-            param_count += 1
 
         if date_to:
-            query += f" AND ust.completed_at <= ${param_count}"
+            query += " AND ust.completed_at <= %s"
             params.append(date_to)
-            param_count += 1
 
         if search:
-            query += f" AND (LOWER(u.name) LIKE LOWER(${param_count}) OR LOWER(u.surname) LIKE LOWER(${param_count}) OR LOWER(u.phone) LIKE LOWER(${param_count}))"
-            params.append(f"%{search}%")
-            param_count += 1
+            search_param = f"%{search}%"
+            query += " AND (LOWER(u.name) LIKE LOWER(%s) OR LOWER(u.surname) LIKE LOWER(%s) OR LOWER(u.phone) LIKE LOWER(%s))"
+            params.extend([search_param, search_param, search_param])
 
         query += " ORDER BY ust.completed_at DESC"
 
@@ -1486,7 +1492,18 @@ async def get_manager_results(
                 ust.completed_at,
                 EXTRACT(EPOCH FROM (ust.completed_at - ust.started_at)) as duration_seconds,
                 er.rating as employee_rating,
-                er.comment as rating_comment
+                er.comment as rating_comment,
+                (
+                    SELECT json_agg(json_build_object(
+                        'competency_id', csa.competency_id,
+                        'competency_name', c.name,
+                        'self_rating', csa.self_rating,
+                        'importance', c.importance
+                    ) ORDER BY c.importance DESC)
+                    FROM competency_self_assessments csa
+                    JOIN competencies c ON csa.competency_id = c.id
+                    WHERE csa.user_test_id = ust.id
+                ) as self_assessments
             FROM user_specialization_tests ust
             JOIN users u ON ust.user_id = u.id
             JOIN specializations s ON ust.specialization_id = s.id

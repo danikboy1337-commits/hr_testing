@@ -558,6 +558,7 @@
                             <th>%</th>
                             <th>Уровень</th>
                             <th>Оценка</th>
+                            <th>Самооценка</th>
                             <th>Время</th>
                             <th>Дата</th>
                             <th>Действия</th>
@@ -565,7 +566,7 @@
                     </thead>
                     <tbody id="resultsBody">
                         <tr>
-                            <td colspan="13" class="loader">Загрузка...</td>
+                            <td colspan="14" class="loader">Загрузка...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -688,7 +689,7 @@
             if (results.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="13" class="empty-state">
+                        <td colspan="14" class="empty-state">
                             <div class="empty-state-icon">📭</div>
                             <div class="empty-state-text">Нет результатов</div>
                         </td>
@@ -715,6 +716,18 @@
                     ratingHtml = `<span class="level-badge ${ratingClass}" ${title}>⭐ ${result.employee_rating}/10</span>`;
                 }
 
+                // Render self-assessment
+                let selfAssessmentHtml = '-';
+                if (result.self_assessments && result.self_assessments.length > 0) {
+                    const avgSelfRating = (result.self_assessments.reduce((sum, sa) => sum + sa.self_rating, 0) / result.self_assessments.length).toFixed(1);
+                    const details = result.self_assessments.map(sa =>
+                        `${sa.competency_name}: ${sa.self_rating}/10`
+                    ).join('&#10;');
+                    const ratingClass = avgSelfRating >= 8 ? 'level-senior' :
+                                       avgSelfRating >= 5 ? 'level-middle' : 'level-junior';
+                    selfAssessmentHtml = `<span class="level-badge ${ratingClass}" title="${details}" style="cursor: help;">📝 ${avgSelfRating}/10</span>`;
+                }
+
                 return `
                     <tr>
                         <td>${result.test_id}</td>
@@ -727,6 +740,7 @@
                         <td><strong>${result.percentage}%</strong></td>
                         <td><span class="level-badge level-${result.level.toLowerCase()}">${result.level}</span></td>
                         <td>${ratingHtml}</td>
+                        <td>${selfAssessmentHtml}</td>
                         <td>${result.duration_minutes ? result.duration_minutes + ' мин' : '-'}</td>
                         <td>${completedDate}</td>
                         <td><button class="action-btn" onclick="viewDetail(${result.test_id})">Детали</button></td>
