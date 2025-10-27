@@ -302,13 +302,10 @@
                         }
                     });
                     const data = await response.json();
-                    
-                    // Если тест завершён - редирект на результаты
-                    if (data.progress && data.progress.total.answered === data.progress.total.total) {
-                        window.location.href = `/results?user_test_id=${userTestId}`;
-                        return;
-                    }
-                    
+
+                    // Don't redirect - let test complete naturally to show self-assessment
+                    console.log('📥 Questions loaded, progress:', data.progress);
+
                     setQuestions(data.questions);
                     setProgress(data.progress);
                 } catch (error) {
