@@ -879,6 +879,7 @@ async def complete_test(user_test_id: int, current_user: dict = Depends(get_curr
 async def get_top_competencies(user_test_id: int, current_user: dict = Depends(get_current_user)):
     """Get top CORE competencies for self-assessment after test completion"""
     user_id = current_user["user_id"]
+    print(f"🔍 Loading competencies for test {user_test_id}, user {user_id}")
     try:
         async with get_db_connection() as conn:
             async with conn.cursor() as cur:
@@ -888,6 +889,7 @@ async def get_top_competencies(user_test_id: int, current_user: dict = Depends(g
                     (user_test_id,)
                 )
                 test_data = await cur.fetchone()
+                print(f"  Test data: {test_data}")
 
                 if not test_data:
                     raise HTTPException(status_code=404, detail="Test not found")
@@ -897,6 +899,7 @@ async def get_top_competencies(user_test_id: int, current_user: dict = Depends(g
                     raise HTTPException(status_code=400, detail="Test not yet completed")
 
                 specialization_id = test_data[1]
+                print(f"  Specialization ID: {specialization_id}")
 
                 # Get top CORE competencies for this specialization (importance >= 70%)
                 await cur.execute("""
@@ -917,6 +920,7 @@ async def get_top_competencies(user_test_id: int, current_user: dict = Depends(g
                         "importance": row[2]
                     })
 
+                print(f"  ✅ Found {len(competencies)} competencies")
                 return {
                     "status": "success",
                     "competencies": competencies
@@ -924,7 +928,10 @@ async def get_top_competencies(user_test_id: int, current_user: dict = Depends(g
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"  ❌ ERROR in top-competencies: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {str(e)}")
 
 @app.post("/api/test/{user_test_id}/self-assessment")
 async def submit_self_assessment(
