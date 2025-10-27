@@ -901,14 +901,14 @@ async def get_top_competencies(user_test_id: int, current_user: dict = Depends(g
                 specialization_id = test_data[1]
                 print(f"  Specialization ID: {specialization_id}")
 
-                # Get top CORE competencies for this specialization (importance >= 70%)
+                # Get top CORE competencies for this specialization (importance >= 70)
+                # Note: competencies table already has specialization_id and importance columns
                 await cur.execute("""
-                    SELECT DISTINCT c.id, c.name, sc.importance_percentage
+                    SELECT c.id, c.name, c.importance
                     FROM competencies c
-                    JOIN specialization_competencies sc ON sc.competency_id = c.id
-                    WHERE sc.specialization_id = %s
-                    AND sc.importance_percentage >= 70
-                    ORDER BY sc.importance_percentage DESC
+                    WHERE c.specialization_id = %s
+                    AND c.importance >= 70
+                    ORDER BY c.importance DESC
                     LIMIT 10
                 """, (specialization_id,))
 
