@@ -2084,6 +2084,68 @@ async def get_operations_stats():
         raise HTTPException(status_code=500, detail=str(e))
 
 # =====================================================
+# DATABASE MIGRATION ENDPOINT (ONE-TIME SETUP)
+# =====================================================
+@app.get("/api/setup-self-assessment-table")
+async def setup_self_assessment_table():
+    """
+    ONE-TIME SETUP: Create competency_self_assessments table
+    Visit this URL once to create the table: /api/setup-self-assessment-table
+    """
+    try:
+        migration_sql = """
+        -- Create table for competency self-assessments
+        CREATE TABLE IF NOT EXISTS competency_self_assessments (
+            id SERIAL PRIMARY KEY,
+            user_test_id INTEGER NOT NULL REFERENCES user_specialization_tests(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            competency_id INTEGER NOT NULL REFERENCES competencies(id) ON DELETE CASCADE,
+            self_rating INTEGER NOT NULL CHECK (self_rating >= 1 AND self_rating <= 10),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_test_id, competency_id)
+        );
+
+        -- Indexes for performance
+        CREATE INDEX IF NOT EXISTS idx_self_assessments_user_test ON competency_self_assessments(user_test_id);
+        CREATE INDEX IF NOT EXISTS idx_self_assessments_user ON competency_self_assessments(user_id);
+        CREATE INDEX IF NOT EXISTS idx_self_assessments_competency ON competency_self_assessments(competency_id);
+        """
+
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Execute the migration
+                await cur.execute(migration_sql)
+                await conn.commit()
+
+                # Verify table was created
+                await cur.execute("""
+                    SELECT table_name
+                    FROM information_schema.tables
+                    WHERE table_name = 'competency_self_assessments'
+                """)
+                table_exists = await cur.fetchone()
+
+                if table_exists:
+                    return {
+                        "status": "success",
+                        "message": "✅ Table 'competency_self_assessments' created successfully!",
+                        "table_name": table_exists[0],
+                        "next_step": "You can now use the self-assessment feature. Complete a test to try it!"
+                    }
+                else:
+                    return {
+                        "status": "error",
+                        "message": "Table creation command executed but table not found. Check database permissions."
+                    }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to create table: {str(e)}",
+            "error_type": type(e).__name__
+        }
+
+# =====================================================
 # RUN
 # =====================================================
 if __name__ == "__main__":
