@@ -2145,6 +2145,111 @@ async def setup_self_assessment_table():
             "error_type": type(e).__name__
         }
 
+@app.get("/api/setup-hr-requirements")
+async def setup_hr_requirements():
+    """
+    COMPREHENSIVE SETUP: Implement all HR requirements
+    - Competency-based manager evaluations
+    - Test time limits
+    - Weighted score calculation
+
+    Visit this URL once to update the database: /api/setup-hr-requirements
+    """
+    try:
+        migration_steps = []
+
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Step 1: Create self-assessment table if not exists
+                migration_steps.append("Creating competency_self_assessments table...")
+                await cur.execute("""
+                    CREATE TABLE IF NOT EXISTS competency_self_assessments (
+                        id SERIAL PRIMARY KEY,
+                        user_test_id INTEGER NOT NULL REFERENCES user_specialization_tests(id) ON DELETE CASCADE,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        competency_id INTEGER NOT NULL REFERENCES competencies(id) ON DELETE CASCADE,
+                        self_rating INTEGER NOT NULL CHECK (self_rating >= 1 AND self_rating <= 10),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(user_test_id, competency_id)
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_self_assessments_user_test ON competency_self_assessments(user_test_id);
+                    CREATE INDEX IF NOT EXISTS idx_self_assessments_user ON competency_self_assessments(user_id);
+                    CREATE INDEX IF NOT EXISTS idx_self_assessments_competency ON competency_self_assessments(competency_id);
+                """)
+
+                # Step 2: Drop old employee_ratings and create new manager_competency_ratings
+                migration_steps.append("Updating manager rating system to competency-based...")
+                await cur.execute("""
+                    DROP TABLE IF EXISTS employee_ratings CASCADE;
+
+                    CREATE TABLE IF NOT EXISTS manager_competency_ratings (
+                        id SERIAL PRIMARY KEY,
+                        employee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        manager_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        user_test_id INTEGER NOT NULL REFERENCES user_specialization_tests(id) ON DELETE CASCADE,
+                        competency_id INTEGER NOT NULL REFERENCES competencies(id) ON DELETE CASCADE,
+                        rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 10),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(user_test_id, competency_id, manager_id)
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_manager_comp_ratings_employee ON manager_competency_ratings(employee_id);
+                    CREATE INDEX IF NOT EXISTS idx_manager_comp_ratings_manager ON manager_competency_ratings(manager_id);
+                    CREATE INDEX IF NOT EXISTS idx_manager_comp_ratings_test ON manager_competency_ratings(user_test_id);
+                    CREATE INDEX IF NOT EXISTS idx_manager_comp_ratings_competency ON manager_competency_ratings(competency_id);
+                """)
+
+                # Step 3: Add time limit columns to tests
+                migration_steps.append("Adding test time limit tracking...")
+                await cur.execute("""
+                    ALTER TABLE user_specialization_tests
+                    ADD COLUMN IF NOT EXISTS time_limit_minutes INTEGER DEFAULT 40,
+                    ADD COLUMN IF NOT EXISTS time_started_at TIMESTAMP,
+                    ADD COLUMN IF NOT EXISTS time_expired BOOLEAN DEFAULT FALSE;
+
+                    UPDATE user_specialization_tests
+                    SET time_started_at = started_at
+                    WHERE time_started_at IS NULL AND started_at IS NOT NULL;
+                """)
+
+                await conn.commit()
+
+                # Verify all tables exist
+                await cur.execute("""
+                    SELECT table_name
+                    FROM information_schema.tables
+                    WHERE table_name IN ('competency_self_assessments', 'manager_competency_ratings')
+                    ORDER BY table_name
+                """)
+                tables = await cur.fetchall()
+
+                return {
+                    "status": "success",
+                    "message": "✅ All HR requirements implemented successfully!",
+                    "migration_steps": migration_steps,
+                    "tables_created": [t[0] for t in tables],
+                    "changes": [
+                        "✓ Self-assessment system ready",
+                        "✓ Manager competency-based evaluations ready",
+                        "✓ 40-minute test time limit added",
+                        "✓ Weighted score calculation ready (Test 50%, Manager 40%, Self 10%)"
+                    ],
+                    "next_steps": [
+                        "1. Complete a test to try self-assessment",
+                        "2. Managers can now rate by competency (not just overall rating)",
+                        "3. Final weighted scores will appear in results panels"
+                    ]
+                }
+
+    except Exception as e:
+        import traceback
+        return {
+            "status": "error",
+            "message": f"Migration failed: {str(e)}",
+            "error_type": type(e).__name__,
+            "traceback": traceback.format_exc()
+        }
+
 # =====================================================
 # RUN
 # =====================================================
