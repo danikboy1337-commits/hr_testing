@@ -1891,8 +1891,7 @@ async def get_employee_completed_tests(employee_id: int, manager: dict = Depends
                         csa.self_rating,
                         mcr.rating as manager_rating
                     FROM user_specialization_tests ust
-                    JOIN user_test_competencies utc ON ust.id = utc.test_id
-                    JOIN competencies c ON utc.competency_id = c.id
+                    JOIN competencies c ON c.specialization_id = ust.specialization_id
                     LEFT JOIN competency_self_assessments csa ON csa.user_test_id = ust.id AND csa.competency_id = c.id
                     LEFT JOIN manager_competency_ratings mcr ON mcr.user_test_id = ust.id AND mcr.competency_id = c.id AND mcr.manager_id = %s
                     WHERE ust.user_id = %s AND ust.status = 'completed'
