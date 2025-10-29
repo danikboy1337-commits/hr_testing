@@ -1503,7 +1503,31 @@ async def get_manager_results(
                     FROM competency_self_assessments csa
                     JOIN competencies c ON csa.competency_id = c.id
                     WHERE csa.user_test_id = ust.id
-                ) as self_assessments
+                ) as self_assessments,
+                (
+                    SELECT AVG(mcr.rating)
+                    FROM manager_competency_ratings mcr
+                    WHERE mcr.user_test_id = ust.id AND mcr.manager_id = %s
+                ) as avg_manager_rating,
+                (
+                    SELECT AVG(csa.self_rating)
+                    FROM competency_self_assessments csa
+                    WHERE csa.user_test_id = ust.id
+                ) as avg_self_rating,
+                ROUND(
+                    (ust.score::numeric / ust.max_score::numeric * 100 * 0.5) +
+                    COALESCE((
+                        SELECT AVG(mcr.rating) / 10.0 * 100 * 0.4
+                        FROM manager_competency_ratings mcr
+                        WHERE mcr.user_test_id = ust.id AND mcr.manager_id = %s
+                    ), 0) +
+                    COALESCE((
+                        SELECT AVG(csa.self_rating) / 10.0 * 100 * 0.1
+                        FROM competency_self_assessments csa
+                        WHERE csa.user_test_id = ust.id
+                    ), 0),
+                    2
+                ) as weighted_score
             FROM user_specialization_tests ust
             JOIN users u ON ust.user_id = u.id
             JOIN specializations s ON ust.specialization_id = s.id
@@ -1513,7 +1537,7 @@ async def get_manager_results(
             AND u.department_id = %s
         """
 
-        params = [manager_id, department_id]
+        params = [manager_id, manager_id, manager_id, department_id]
 
         if specialization_id:
             query += " AND ust.specialization_id = %s"
@@ -1759,6 +1783,10 @@ class EmployeeRatingSubmit(BaseModel):
     rating: int
     comment: Optional[str] = None
 
+class CompetencyRatingSubmit(BaseModel):
+    user_test_id: int
+    competency_ratings: dict  # {competency_id: rating}
+
 @app.get("/api/manager/employees")
 async def get_manager_employees(manager: dict = Depends(get_current_manager)):
     """Get list of employees in manager's department"""
@@ -1902,6 +1930,136 @@ async def submit_employee_rating(data: EmployeeRatingSubmit, manager: dict = Dep
                     "rating_id": result[0],
                     "message": "Оценка сохранена"
                 }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# =====================================================
+# API - COMPETENCY-BASED RATINGS (New HR Requirements)
+# =====================================================
+
+@app.get("/api/manager/employee-tests/{employee_id}")
+async def get_employee_completed_tests(employee_id: int, manager: dict = Depends(get_current_manager)):
+    """Get completed tests for an employee to rate by competency"""
+    department_id = manager.get("department_id")
+    manager_id = manager.get("user_id")
+
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Verify employee is in manager's department
+                await cur.execute("""
+                    SELECT department_id FROM users WHERE id = %s
+                """, (employee_id,))
+                emp = await cur.fetchone()
+
+                if not emp or emp[0] != department_id:
+                    raise HTTPException(status_code=403, detail="Employee not in your department")
+
+                # Get completed tests with competencies and self-assessments
+                await cur.execute("""
+                    SELECT
+                        ust.id as test_id,
+                        ust.specialization,
+                        ust.profile,
+                        ust.completed_at,
+                        ust.score,
+                        ust.max_score,
+                        c.id as competency_id,
+                        c.name as competency_name,
+                        csa.self_rating,
+                        mcr.rating as manager_rating
+                    FROM user_specialization_tests ust
+                    JOIN user_test_competencies utc ON ust.id = utc.test_id
+                    JOIN competencies c ON utc.competency_id = c.id
+                    LEFT JOIN competency_self_assessments csa ON csa.user_test_id = ust.id AND csa.competency_id = c.id
+                    LEFT JOIN manager_competency_ratings mcr ON mcr.user_test_id = ust.id AND mcr.competency_id = c.id AND mcr.manager_id = %s
+                    WHERE ust.user_id = %s AND ust.status = 'completed'
+                    ORDER BY ust.completed_at DESC, c.name
+                """, (manager_id, employee_id))
+
+                rows = await cur.fetchall()
+
+                # Group by test
+                tests = {}
+                for row in rows:
+                    test_id = row[0]
+                    if test_id not in tests:
+                        tests[test_id] = {
+                            "test_id": test_id,
+                            "specialization": row[1],
+                            "profile": row[2],
+                            "completed_at": row[3].isoformat() if row[3] else None,
+                            "score": row[4],
+                            "max_score": row[5],
+                            "competencies": []
+                        }
+
+                    tests[test_id]["competencies"].append({
+                        "competency_id": row[6],
+                        "competency_name": row[7],
+                        "self_rating": row[8],
+                        "manager_rating": row[9]
+                    })
+
+                return {
+                    "status": "success",
+                    "employee_id": employee_id,
+                    "tests": list(tests.values())
+                }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/manager/competency-ratings")
+async def submit_competency_ratings(data: CompetencyRatingSubmit, manager: dict = Depends(get_current_manager)):
+    """Submit or update competency-based ratings for an employee's test"""
+    manager_id = manager.get("user_id")
+    department_id = manager.get("department_id")
+
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Verify test belongs to employee in manager's department
+                await cur.execute("""
+                    SELECT u.department_id, u.id as employee_id
+                    FROM user_specialization_tests ust
+                    JOIN users u ON ust.user_id = u.id
+                    WHERE ust.id = %s
+                """, (data.user_test_id,))
+
+                test_info = await cur.fetchone()
+                if not test_info:
+                    raise HTTPException(status_code=404, detail="Test not found")
+
+                if test_info[0] != department_id:
+                    raise HTTPException(status_code=403, detail="Employee not in your department")
+
+                employee_id = test_info[1]
+
+                # Insert or update ratings for each competency
+                for competency_id, rating in data.competency_ratings.items():
+                    if not (1 <= rating <= 10):
+                        raise HTTPException(status_code=400, detail=f"Rating must be between 1 and 10, got {rating}")
+
+                    await cur.execute("""
+                        INSERT INTO manager_competency_ratings
+                            (employee_id, manager_id, user_test_id, competency_id, rating)
+                        VALUES (%s, %s, %s, %s, %s)
+                        ON CONFLICT (user_test_id, competency_id, manager_id)
+                        DO UPDATE SET
+                            rating = EXCLUDED.rating,
+                            updated_at = CURRENT_TIMESTAMP
+                    """, (employee_id, manager_id, data.user_test_id, int(competency_id), rating))
+
+                return {
+                    "status": "success",
+                    "message": "Competency ratings saved successfully"
+                }
+
     except HTTPException:
         raise
     except Exception as e:

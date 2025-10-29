@@ -21,6 +21,104 @@
             padding: 20px;
         }
 
+        .camera-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 12px 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            z-index: 1000;
+            border: 2px solid #e53e3e;
+        }
+
+        .timer-display {
+            position: fixed;
+            top: 90px;
+            right: 20px;
+            background: white;
+            padding: 15px 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 1000;
+            border: 2px solid #1DB584;
+        }
+
+        .timer-display.warning {
+            border-color: #ff9800;
+            animation: shake 0.5s;
+        }
+
+        .timer-display.danger {
+            border-color: #e53e3e;
+            animation: shake 0.5s infinite;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+
+        .timer-icon {
+            font-size: 24px;
+        }
+
+        .timer-text {
+            font-size: 24px;
+            font-weight: 700;
+            color: #333;
+            font-family: 'Courier New', monospace;
+        }
+
+        .timer-text.warning {
+            color: #ff9800;
+        }
+
+        .timer-text.danger {
+            color: #e53e3e;
+        }
+
+        .timer-label {
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+            margin-top: 5px;
+        }
+
+        .camera-icon {
+            font-size: 24px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .camera-text {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .recording-dot {
+            width: 10px;
+            height: 10px;
+            background: #e53e3e;
+            border-radius: 50%;
+            animation: blink 1.5s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
         #root {
             max-width: 900px;
             margin: 0 auto;
@@ -240,6 +338,22 @@
     </style>
 </head>
 <body>
+    <!-- Camera Indicator (Placebo) -->
+    <div class="camera-indicator">
+        <div class="recording-dot"></div>
+        <span class="camera-icon">📹</span>
+        <span class="camera-text">Запись ведется</span>
+    </div>
+
+    <!-- Timer Display -->
+    <div class="timer-display" id="timerDisplay">
+        <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+            <span class="timer-icon">⏱️</span>
+            <span class="timer-text" id="timerText">40:00</span>
+        </div>
+        <div class="timer-label">Осталось времени</div>
+    </div>
+
     <div id="root"></div>
 
     <script type="text/babel">
@@ -259,6 +373,8 @@
             const [selfRatings, setSelfRatings] = useState({});
             const [showSelfAssessment, setShowSelfAssessment] = useState(false);
             const [selfAssessmentSubmitted, setSelfAssessmentSubmitted] = useState(false);
+            const [timeRemaining, setTimeRemaining] = useState(40 * 60); // 40 minutes in seconds
+            const [timerExpired, setTimerExpired] = useState(false);
 
             console.log('Initial state - showSelfAssessment:', false, 'competencies:', []);
 
@@ -267,6 +383,82 @@
 
             useEffect(() => {
                 loadQuestions();
+            }, []);
+
+            // Timer countdown effect
+            useEffect(() => {
+                if (completed || timerExpired) return;
+
+                const timer = setInterval(() => {
+                    setTimeRemaining(prev => {
+                        if (prev <= 1) {
+                            clearInterval(timer);
+                            setTimerExpired(true);
+                            autoSubmitTest();
+                            return 0;
+                        }
+                        return prev - 1;
+                    });
+                }, 1000);
+
+                return () => clearInterval(timer);
+            }, [completed, timerExpired]);
+
+            // Update timer display
+            useEffect(() => {
+                const minutes = Math.floor(timeRemaining / 60);
+                const seconds = timeRemaining % 60;
+                const timeText = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+                const timerTextEl = document.getElementById('timerText');
+                const timerDisplayEl = document.getElementById('timerDisplay');
+
+                if (timerTextEl) {
+                    timerTextEl.textContent = timeText;
+
+                    // Add warning/danger classes
+                    timerTextEl.classList.remove('warning', 'danger');
+                    timerDisplayEl.classList.remove('warning', 'danger');
+
+                    if (timeRemaining <= 60) {
+                        timerTextEl.classList.add('danger');
+                        timerDisplayEl.classList.add('danger');
+                    } else if (timeRemaining <= 300) {
+                        timerTextEl.classList.add('warning');
+                        timerDisplayEl.classList.add('warning');
+                    }
+                }
+            }, [timeRemaining]);
+
+            // Copy-paste prevention
+            useEffect(() => {
+                const preventCopy = (e) => {
+                    e.preventDefault();
+                    alert('Копирование запрещено во время теста');
+                    return false;
+                };
+
+                const preventPaste = (e) => {
+                    e.preventDefault();
+                    alert('Вставка запрещена во время теста');
+                    return false;
+                };
+
+                const preventCut = (e) => {
+                    e.preventDefault();
+                    alert('Вырезание запрещено во время теста');
+                    return false;
+                };
+
+                document.addEventListener('copy', preventCopy);
+                document.addEventListener('paste', preventPaste);
+                document.addEventListener('cut', preventCut);
+
+                return () => {
+                    document.removeEventListener('copy', preventCopy);
+                    document.removeEventListener('paste', preventPaste);
+                    document.removeEventListener('cut', preventCut);
+                };
             }, []);
 
             useEffect(() => {
@@ -315,9 +507,27 @@
                 }
             };
 
+            const autoSubmitTest = async () => {
+                const token = sessionStorage.getItem('halyk_token');
+                try {
+                    alert('⏰ Время вышло! Тест будет автоматически завершен.');
+                    const completeResponse = await fetch(`/api/complete-test/${userTestId}`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+                    const resultData = await completeResponse.json();
+                    setResult(resultData);
+                    setCompleted(true);
+                } catch (error) {
+                    console.error('Error auto-submitting test:', error);
+                }
+            };
+
             const handleAnswer = async () => {
                 if (selectedAnswer === null || loading) return;
-                
+
                 setLoading(true);
                 const token = sessionStorage.getItem('halyk_token');
 
@@ -325,7 +535,7 @@
                     // Отправляем ответ
                     await fetch('/api/submit-answer', {
                         method: 'POST',
-                        headers: { 
+                        headers: {
                             'Content-Type': 'application/json',
                             'Authorization': `Bearer ${token}`
                         },
