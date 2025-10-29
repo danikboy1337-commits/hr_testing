@@ -382,12 +382,23 @@
             const userTestId = urlParams.get('user_test_id');
 
             useEffect(() => {
-                loadQuestions();
+                // Load competencies FIRST for self-assessment
+                loadCompetencies();
             }, []);
 
-            // Timer countdown effect
             useEffect(() => {
-                if (completed || timerExpired) return;
+                // Находим первый неотвеченный вопрос
+                if (questions.length > 0) {
+                    const firstUnanswered = questions.findIndex(q => !q.is_answered);
+                    if (firstUnanswered !== -1) {
+                        setCurrentIndex(firstUnanswered);
+                    }
+                }
+            }, [questions]);
+
+            // Timer countdown effect - only starts AFTER self-assessment
+            useEffect(() => {
+                if (!selfAssessmentSubmitted || completed || timerExpired) return;
 
                 const timer = setInterval(() => {
                     setTimeRemaining(prev => {
@@ -402,7 +413,7 @@
                 }, 1000);
 
                 return () => clearInterval(timer);
-            }, [completed, timerExpired]);
+            }, [selfAssessmentSubmitted, completed, timerExpired]);
 
             // Update timer display
             useEffect(() => {
@@ -428,10 +439,17 @@
                         timerDisplayEl.classList.add('warning');
                     }
                 }
-            }, [timeRemaining]);
 
-            // Copy-paste prevention
+                // Hide/show timer based on self-assessment status
+                if (timerDisplayEl) {
+                    timerDisplayEl.style.display = selfAssessmentSubmitted ? 'block' : 'none';
+                }
+            }, [timeRemaining, selfAssessmentSubmitted]);
+
+            // Copy-paste prevention - only active AFTER self-assessment
             useEffect(() => {
+                if (!selfAssessmentSubmitted) return;
+
                 const preventCopy = (e) => {
                     e.preventDefault();
                     alert('Копирование запрещено во время теста');
@@ -459,26 +477,7 @@
                     document.removeEventListener('paste', preventPaste);
                     document.removeEventListener('cut', preventCut);
                 };
-            }, []);
-
-            useEffect(() => {
-                // Находим первый неотвеченный вопрос
-                if (questions.length > 0) {
-                    const firstUnanswered = questions.findIndex(q => !q.is_answered);
-                    if (firstUnanswered !== -1) {
-                        setCurrentIndex(firstUnanswered);
-                    }
-                }
-            }, [questions]);
-
-            useEffect(() => {
-                // Load competencies when test completes
-                console.log('useEffect triggered - completed:', completed, 'showSelfAssessment:', showSelfAssessment, 'selfAssessmentSubmitted:', selfAssessmentSubmitted);
-                if (completed && !showSelfAssessment && !selfAssessmentSubmitted) {
-                    console.log('Triggering loadCompetencies()');
-                    loadCompetencies();
-                }
-            }, [completed, showSelfAssessment, selfAssessmentSubmitted]);
+            }, [selfAssessmentSubmitted]);
 
             const loadQuestions = async () => {
                 const token = sessionStorage.getItem('halyk_token');
@@ -587,15 +586,28 @@
                     console.log('Competencies response status:', response.status);
                     const data = await response.json();
                     console.log('Competencies data:', data);
+
                     if (data.status === 'success') {
                         console.log('Found', data.competencies.length, 'competencies');
                         setCompetencies(data.competencies);
-                        setShowSelfAssessment(true);
+
+                        // Check if self-assessment already submitted
+                        if (data.already_submitted) {
+                            console.log('Self-assessment already submitted, loading questions');
+                            setSelfAssessmentSubmitted(true);
+                            setShowSelfAssessment(false);
+                            loadQuestions();
+                        } else {
+                            console.log('Showing self-assessment form');
+                            setShowSelfAssessment(true);
+                        }
                     } else {
                         console.log('No competencies found or error in response');
                     }
                 } catch (error) {
                     console.error('Error loading competencies:', error);
+                } finally {
+                    setLoading(false);
                 }
             };
 
@@ -623,16 +635,147 @@
                     const data = await response.json();
                     if (data.status === 'success') {
                         setSelfAssessmentSubmitted(true);
+                        setShowSelfAssessment(false);
+                        // Now load the actual test questions
+                        loadQuestions();
                     }
                 } catch (error) {
                     alert('Ошибка отправки самооценки');
                 }
             };
 
-            if (loading && questions.length === 0) {
+            if (loading) {
                 return (
                     <div className="test-container">
-                        <div className="loading">Загрузка вопросов...</div>
+                        <div className="loading">Загрузка...</div>
+                    </div>
+                );
+            }
+
+            // Show self-assessment FIRST, before test starts
+            if (showSelfAssessment && !selfAssessmentSubmitted && competencies.length > 0) {
+                return (
+                    <div className="test-container">
+                        <div style={{
+                            marginTop: '20px',
+                            padding: '25px',
+                            background: '#fff',
+                            borderRadius: '12px',
+                            border: '2px solid #f5576c',
+                            boxShadow: '0 4px 12px rgba(245, 87, 108, 0.1)'
+                        }}>
+                            <h3 style={{color: '#f5576c', marginBottom: '15px', fontSize: '24px', textAlign: 'center'}}>
+                                ⭐ Самооценка ключевых компетенций
+                            </h3>
+                            <p style={{color: '#666', marginBottom: '25px', fontSize: '16px', textAlign: 'center'}}>
+                                Перед началом теста оцените свой уровень владения основными компетенциями по шкале от 1 до 10
+                            </p>
+                            <p style={{color: '#999', marginBottom: '25px', fontSize: '14px', textAlign: 'center', fontStyle: 'italic'}}>
+                                1 = начальный уровень, 10 = экспертный уровень
+                            </p>
+
+                            {competencies.map(comp => (
+                                <div key={comp.id} style={{
+                                    marginBottom: '25px',
+                                    padding: '20px',
+                                    background: '#f8f9fa',
+                                    borderRadius: '10px'
+                                }}>
+                                    <div style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        marginBottom: '15px',
+                                        flexWrap: 'wrap'
+                                    }}>
+                                        <div style={{flex: 1, minWidth: '200px'}}>
+                                            <strong style={{fontSize: '16px', color: '#333'}}>
+                                                {comp.name}
+                                            </strong>
+                                            <span style={{
+                                                marginLeft: '10px',
+                                                padding: '4px 10px',
+                                                background: '#f5576c',
+                                                color: 'white',
+                                                borderRadius: '12px',
+                                                fontSize: '12px',
+                                                fontWeight: 'bold'
+                                            }}>
+                                                CORE {comp.importance}%
+                                            </span>
+                                        </div>
+                                        {selfRatings[comp.id] && (
+                                            <div style={{
+                                                marginTop: '8px',
+                                                padding: '6px 12px',
+                                                background: '#1DB584',
+                                                color: 'white',
+                                                borderRadius: '8px',
+                                                fontSize: '14px',
+                                                fontWeight: 'bold'
+                                            }}>
+                                                Оценка: {selfRatings[comp.id]}/10
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div style={{
+                                        display: 'flex',
+                                        gap: '8px',
+                                        flexWrap: 'wrap',
+                                        justifyContent: 'center'
+                                    }}>
+                                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(rating => (
+                                            <button
+                                                key={rating}
+                                                onClick={() => {
+                                                    setSelfRatings({...selfRatings, [comp.id]: rating});
+                                                }}
+                                                style={{
+                                                    width: '45px',
+                                                    height: '45px',
+                                                    borderRadius: '8px',
+                                                    border: selfRatings[comp.id] === rating
+                                                        ? '3px solid #f5576c'
+                                                        : '2px solid #ddd',
+                                                    background: selfRatings[comp.id] === rating
+                                                        ? '#f5576c'
+                                                        : 'white',
+                                                    color: selfRatings[comp.id] === rating ? 'white' : '#333',
+                                                    fontSize: '16px',
+                                                    fontWeight: 'bold',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.2s'
+                                                }}
+                                            >
+                                                {rating}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+
+                            <button
+                                className="btn"
+                                onClick={submitSelfAssessment}
+                                style={{
+                                    width: '100%',
+                                    marginTop: '20px',
+                                    padding: '15px',
+                                    fontSize: '18px',
+                                    fontWeight: 'bold',
+                                    background: Object.keys(selfRatings).length === competencies.length
+                                        ? 'linear-gradient(135deg, #f5576c 0%, #f093fb 100%)'
+                                        : '#ccc',
+                                    cursor: Object.keys(selfRatings).length === competencies.length
+                                        ? 'pointer'
+                                        : 'not-allowed'
+                                }}
+                                disabled={Object.keys(selfRatings).length !== competencies.length}
+                            >
+                                Начать тест ({Object.keys(selfRatings).length}/{competencies.length} компетенций оценено)
+                            </button>
+                        </div>
                     </div>
                 );
             }
@@ -687,8 +830,8 @@
                                 </div>
                             )}
 
-                            {/* Self-Assessment Section */}
-                            {showSelfAssessment && !selfAssessmentSubmitted && competencies.length > 0 && (
+                            {/* Self-Assessment moved to BEFORE test - this section no longer needed */}
+                            {false && showSelfAssessment && !selfAssessmentSubmitted && competencies.length > 0 && (
                                 <div style={{
                                     marginTop: '30px',
                                     padding: '25px',
@@ -818,32 +961,13 @@
                                 </div>
                             )}
 
-                            {selfAssessmentSubmitted && (
-                                <div style={{
-                                    marginTop: '30px',
-                                    padding: '20px',
-                                    background: '#f0fff4',
-                                    borderRadius: '12px',
-                                    border: '2px solid #38a169'
-                                }}>
-                                    <h3 style={{color: '#38a169', marginBottom: '10px'}}>
-                                        ✅ Самооценка отправлена
-                                    </h3>
-                                    <p style={{color: '#666'}}>
-                                        Спасибо за вашу самооценку! Ваши результаты сохранены.
-                                    </p>
-                                </div>
-                            )}
-
-                            {(selfAssessmentSubmitted || competencies.length === 0) && (
-                                <button
-                                    className="btn"
-                                    onClick={() => window.location.href = '/'}
-                                    style={{marginTop: '30px'}}
-                                >
-                                    На главную
-                                </button>
-                            )}
+                            <button
+                                className="btn"
+                                onClick={() => window.location.href = '/'}
+                                style={{marginTop: '30px'}}
+                            >
+                                На главную
+                            </button>
                         </div>
                     </div>
                 );

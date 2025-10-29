@@ -877,15 +877,15 @@ async def complete_test(user_test_id: int, current_user: dict = Depends(get_curr
 
 @app.get("/api/test/{user_test_id}/top-competencies")
 async def get_top_competencies(user_test_id: int, current_user: dict = Depends(get_current_user)):
-    """Get top CORE competencies for self-assessment after test completion"""
+    """Get top CORE competencies for self-assessment BEFORE test starts"""
     user_id = current_user["user_id"]
     print(f"🔍 Loading competencies for test {user_test_id}, user {user_id}")
     try:
         async with get_db_connection() as conn:
             async with conn.cursor() as cur:
-                # Verify test belongs to user and is completed
+                # Verify test belongs to user
                 await cur.execute(
-                    "SELECT user_id, specialization_id, completed_at FROM user_specialization_tests WHERE id = %s",
+                    "SELECT user_id, specialization_id FROM user_specialization_tests WHERE id = %s",
                     (user_test_id,)
                 )
                 test_data = await cur.fetchone()
@@ -895,14 +895,19 @@ async def get_top_competencies(user_test_id: int, current_user: dict = Depends(g
                     raise HTTPException(status_code=404, detail="Test not found")
                 if test_data[0] != user_id:
                     raise HTTPException(status_code=403, detail="Access denied")
-                if test_data[2] is None:
-                    raise HTTPException(status_code=400, detail="Test not yet completed")
 
                 specialization_id = test_data[1]
                 print(f"  Specialization ID: {specialization_id}")
 
+                # Check if self-assessment already submitted
+                await cur.execute("""
+                    SELECT COUNT(*) FROM competency_self_assessments
+                    WHERE user_test_id = %s
+                """, (user_test_id,))
+                already_submitted = (await cur.fetchone())[0] > 0
+                print(f"  Self-assessment already submitted: {already_submitted}")
+
                 # Get top CORE competencies for this specialization (importance >= 70)
-                # Note: competencies table already has specialization_id and importance columns
                 await cur.execute("""
                     SELECT c.id, c.name, c.importance
                     FROM competencies c
@@ -920,10 +925,11 @@ async def get_top_competencies(user_test_id: int, current_user: dict = Depends(g
                         "importance": row[2]
                     })
 
-                print(f"  ✅ Found {len(competencies)} competencies")
+                print(f"  ✅ Found {len(competencies)} competencies, already_submitted: {already_submitted}")
                 return {
                     "status": "success",
-                    "competencies": competencies
+                    "competencies": competencies,
+                    "already_submitted": already_submitted
                 }
     except HTTPException:
         raise
@@ -944,9 +950,9 @@ async def submit_self_assessment(
     try:
         async with get_db_connection() as conn:
             async with conn.cursor() as cur:
-                # Verify test belongs to user and is completed
+                # Verify test belongs to user
                 await cur.execute(
-                    "SELECT user_id, completed_at FROM user_specialization_tests WHERE id = %s",
+                    "SELECT user_id FROM user_specialization_tests WHERE id = %s",
                     (user_test_id,)
                 )
                 test_data = await cur.fetchone()
@@ -955,8 +961,6 @@ async def submit_self_assessment(
                     raise HTTPException(status_code=404, detail="Test not found")
                 if test_data[0] != user_id:
                     raise HTTPException(status_code=403, detail="Access denied")
-                if test_data[1] is None:
-                    raise HTTPException(status_code=400, detail="Test not yet completed")
 
                 # Insert self-assessments
                 for assessment in data.assessments:
