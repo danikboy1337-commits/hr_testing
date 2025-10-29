@@ -596,17 +596,19 @@
                             console.log('Self-assessment already submitted, loading questions');
                             setSelfAssessmentSubmitted(true);
                             setShowSelfAssessment(false);
-                            loadQuestions();
+                            // Don't set loading false yet, let loadQuestions handle it
+                            await loadQuestions();
                         } else {
                             console.log('Showing self-assessment form');
                             setShowSelfAssessment(true);
+                            setLoading(false);
                         }
                     } else {
                         console.log('No competencies found or error in response');
+                        setLoading(false);
                     }
                 } catch (error) {
                     console.error('Error loading competencies:', error);
-                } finally {
                     setLoading(false);
                 }
             };
@@ -637,7 +639,8 @@
                         setSelfAssessmentSubmitted(true);
                         setShowSelfAssessment(false);
                         // Now load the actual test questions
-                        loadQuestions();
+                        setLoading(true);
+                        await loadQuestions();
                     }
                 } catch (error) {
                     alert('Ошибка отправки самооценки');
@@ -973,8 +976,17 @@
                 );
             }
 
+            // Don't render test if questions aren't loaded yet
+            if (!questions || questions.length === 0) {
+                return (
+                    <div className="test-container">
+                        <div className="loading">Загрузка вопросов...</div>
+                    </div>
+                );
+            }
+
             const currentQuestion = questions[currentIndex];
-            const overallProgress = progress ? 
+            const overallProgress = progress ?
                 ((progress.total.answered / progress.total.total) * 100) : 0;
 
             return (
