@@ -21,6 +21,104 @@
             padding: 20px;
         }
 
+        .camera-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 12px 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            z-index: 1000;
+            border: 2px solid #e53e3e;
+        }
+
+        .timer-display {
+            position: fixed;
+            top: 90px;
+            right: 20px;
+            background: white;
+            padding: 15px 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 1000;
+            border: 2px solid #1DB584;
+        }
+
+        .timer-display.warning {
+            border-color: #ff9800;
+            animation: shake 0.5s;
+        }
+
+        .timer-display.danger {
+            border-color: #e53e3e;
+            animation: shake 0.5s infinite;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+
+        .timer-icon {
+            font-size: 24px;
+        }
+
+        .timer-text {
+            font-size: 24px;
+            font-weight: 700;
+            color: #333;
+            font-family: 'Courier New', monospace;
+        }
+
+        .timer-text.warning {
+            color: #ff9800;
+        }
+
+        .timer-text.danger {
+            color: #e53e3e;
+        }
+
+        .timer-label {
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+            margin-top: 5px;
+        }
+
+        .camera-icon {
+            font-size: 24px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .camera-text {
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .recording-dot {
+            width: 10px;
+            height: 10px;
+            background: #e53e3e;
+            border-radius: 50%;
+            animation: blink 1.5s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
         #root {
             max-width: 900px;
             margin: 0 auto;
@@ -240,12 +338,30 @@
     </style>
 </head>
 <body>
+    <!-- Camera Indicator (Placebo) -->
+    <div class="camera-indicator">
+        <div class="recording-dot"></div>
+        <span class="camera-icon">📹</span>
+        <span class="camera-text">Запись ведется</span>
+    </div>
+
+    <!-- Timer Display -->
+    <div class="timer-display" id="timerDisplay">
+        <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
+            <span class="timer-icon">⏱️</span>
+            <span class="timer-text" id="timerText">40:00</span>
+        </div>
+        <div class="timer-label">Осталось времени</div>
+    </div>
+
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect } = React;
 
         function App() {
+            console.log('=== TEST APP LOADED - Self-Assessment Feature Active ===');
+
             const [questions, setQuestions] = useState([]);
             const [currentIndex, setCurrentIndex] = useState(0);
             const [selectedAnswer, setSelectedAnswer] = useState(null);
@@ -253,12 +369,21 @@
             const [completed, setCompleted] = useState(false);
             const [result, setResult] = useState(null);
             const [progress, setProgress] = useState(null);
-            
+            const [competencies, setCompetencies] = useState([]);
+            const [selfRatings, setSelfRatings] = useState({});
+            const [showSelfAssessment, setShowSelfAssessment] = useState(false);
+            const [selfAssessmentSubmitted, setSelfAssessmentSubmitted] = useState(false);
+            const [timeRemaining, setTimeRemaining] = useState(40 * 60); // 40 minutes in seconds
+            const [timerExpired, setTimerExpired] = useState(false);
+
+            console.log('Initial state - showSelfAssessment:', false, 'competencies:', []);
+
             const urlParams = new URLSearchParams(window.location.search);
             const userTestId = urlParams.get('user_test_id');
 
             useEffect(() => {
-                loadQuestions();
+                // Load competencies FIRST for self-assessment
+                loadCompetencies();
             }, []);
 
             useEffect(() => {
@@ -271,8 +396,91 @@
                 }
             }, [questions]);
 
+            // Timer countdown effect - only starts AFTER self-assessment
+            useEffect(() => {
+                if (!selfAssessmentSubmitted || completed || timerExpired) return;
+
+                const timer = setInterval(() => {
+                    setTimeRemaining(prev => {
+                        if (prev <= 1) {
+                            clearInterval(timer);
+                            setTimerExpired(true);
+                            autoSubmitTest();
+                            return 0;
+                        }
+                        return prev - 1;
+                    });
+                }, 1000);
+
+                return () => clearInterval(timer);
+            }, [selfAssessmentSubmitted, completed, timerExpired]);
+
+            // Update timer display
+            useEffect(() => {
+                const minutes = Math.floor(timeRemaining / 60);
+                const seconds = timeRemaining % 60;
+                const timeText = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+                const timerTextEl = document.getElementById('timerText');
+                const timerDisplayEl = document.getElementById('timerDisplay');
+
+                if (timerTextEl) {
+                    timerTextEl.textContent = timeText;
+
+                    // Add warning/danger classes
+                    timerTextEl.classList.remove('warning', 'danger');
+                    timerDisplayEl.classList.remove('warning', 'danger');
+
+                    if (timeRemaining <= 60) {
+                        timerTextEl.classList.add('danger');
+                        timerDisplayEl.classList.add('danger');
+                    } else if (timeRemaining <= 300) {
+                        timerTextEl.classList.add('warning');
+                        timerDisplayEl.classList.add('warning');
+                    }
+                }
+
+                // Hide/show timer based on self-assessment status
+                if (timerDisplayEl) {
+                    timerDisplayEl.style.display = selfAssessmentSubmitted ? 'block' : 'none';
+                }
+            }, [timeRemaining, selfAssessmentSubmitted]);
+
+            // Copy-paste prevention - only active AFTER self-assessment
+            useEffect(() => {
+                if (!selfAssessmentSubmitted) return;
+
+                const preventCopy = (e) => {
+                    e.preventDefault();
+                    alert('Копирование запрещено во время теста');
+                    return false;
+                };
+
+                const preventPaste = (e) => {
+                    e.preventDefault();
+                    alert('Вставка запрещена во время теста');
+                    return false;
+                };
+
+                const preventCut = (e) => {
+                    e.preventDefault();
+                    alert('Вырезание запрещено во время теста');
+                    return false;
+                };
+
+                document.addEventListener('copy', preventCopy);
+                document.addEventListener('paste', preventPaste);
+                document.addEventListener('cut', preventCut);
+
+                return () => {
+                    document.removeEventListener('copy', preventCopy);
+                    document.removeEventListener('paste', preventPaste);
+                    document.removeEventListener('cut', preventCut);
+                };
+            }, [selfAssessmentSubmitted]);
+
             const loadQuestions = async () => {
-                const token = localStorage.getItem('halyk_token');
+                const token = sessionStorage.getItem('halyk_token');
                 if (!token) {
                     window.location.href = '/';
                     return;
@@ -285,13 +493,10 @@
                         }
                     });
                     const data = await response.json();
-                    
-                    // Если тест завершён - редирект на результаты
-                    if (data.progress && data.progress.total.answered === data.progress.total.total) {
-                        window.location.href = `/results?user_test_id=${userTestId}`;
-                        return;
-                    }
-                    
+
+                    // Don't redirect - let test complete naturally to show self-assessment
+                    console.log('📥 Questions loaded, progress:', data.progress);
+
                     setQuestions(data.questions);
                     setProgress(data.progress);
                 } catch (error) {
@@ -301,17 +506,35 @@
                 }
             };
 
+            const autoSubmitTest = async () => {
+                const token = sessionStorage.getItem('halyk_token');
+                try {
+                    alert('⏰ Время вышло! Тест будет автоматически завершен.');
+                    const completeResponse = await fetch(`/api/complete-test/${userTestId}`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+                    const resultData = await completeResponse.json();
+                    setResult(resultData);
+                    setCompleted(true);
+                } catch (error) {
+                    console.error('Error auto-submitting test:', error);
+                }
+            };
+
             const handleAnswer = async () => {
                 if (selectedAnswer === null || loading) return;
-                
+
                 setLoading(true);
-                const token = localStorage.getItem('halyk_token');
+                const token = sessionStorage.getItem('halyk_token');
 
                 try {
                     // Отправляем ответ
                     await fetch('/api/submit-answer', {
                         method: 'POST',
-                        headers: { 
+                        headers: {
                             'Content-Type': 'application/json',
                             'Authorization': `Bearer ${token}`
                         },
@@ -339,8 +562,10 @@
                             }
                         });
                         const resultData = await completeResponse.json();
+                        console.log('🎉 TEST COMPLETED! Setting completed=true, result:', resultData);
                         setResult(resultData);
                         setCompleted(true);
+                        console.log('✅ State updated - completed is now TRUE - useEffect should trigger!');
                         setLoading(false);
                     }
                 } catch (error) {
@@ -349,15 +574,222 @@
                 }
             };
 
-            if (loading && questions.length === 0) {
+            const loadCompetencies = async () => {
+                const token = sessionStorage.getItem('halyk_token');
+                console.log('Loading competencies for test:', userTestId);
+                try {
+                    const response = await fetch(`/api/test/${userTestId}/top-competencies`, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+                    console.log('Competencies response status:', response.status);
+                    const data = await response.json();
+                    console.log('Competencies data:', data);
+
+                    if (data.status === 'success') {
+                        console.log('Found', data.competencies.length, 'competencies');
+                        setCompetencies(data.competencies);
+
+                        // Check if self-assessment already submitted
+                        if (data.already_submitted) {
+                            console.log('Self-assessment already submitted, loading questions');
+                            setSelfAssessmentSubmitted(true);
+                            setShowSelfAssessment(false);
+                            // Don't set loading false yet, let loadQuestions handle it
+                            await loadQuestions();
+                        } else {
+                            console.log('Showing self-assessment form');
+                            setShowSelfAssessment(true);
+                            setLoading(false);
+                        }
+                    } else {
+                        console.log('No competencies found or error in response');
+                        setLoading(false);
+                    }
+                } catch (error) {
+                    console.error('Error loading competencies:', error);
+                    setLoading(false);
+                }
+            };
+
+            const submitSelfAssessment = async () => {
+                const token = sessionStorage.getItem('halyk_token');
+                const assessments = Object.keys(selfRatings).map(compId => ({
+                    competency_id: parseInt(compId),
+                    self_rating: selfRatings[compId]
+                }));
+
+                if (assessments.length === 0) {
+                    alert('Пожалуйста, оцените хотя бы одну компетенцию');
+                    return;
+                }
+
+                try {
+                    const response = await fetch(`/api/test/${userTestId}/self-assessment`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({ assessments })
+                    });
+                    const data = await response.json();
+                    if (data.status === 'success') {
+                        setSelfAssessmentSubmitted(true);
+                        setShowSelfAssessment(false);
+                        // Now load the actual test questions
+                        setLoading(true);
+                        await loadQuestions();
+                    }
+                } catch (error) {
+                    alert('Ошибка отправки самооценки');
+                }
+            };
+
+            if (loading) {
                 return (
                     <div className="test-container">
-                        <div className="loading">Загрузка вопросов...</div>
+                        <div className="loading">Загрузка...</div>
+                    </div>
+                );
+            }
+
+            // Show self-assessment FIRST, before test starts
+            if (showSelfAssessment && !selfAssessmentSubmitted && competencies.length > 0) {
+                return (
+                    <div className="test-container">
+                        <div style={{
+                            marginTop: '20px',
+                            padding: '25px',
+                            background: '#fff',
+                            borderRadius: '12px',
+                            border: '2px solid #f5576c',
+                            boxShadow: '0 4px 12px rgba(245, 87, 108, 0.1)'
+                        }}>
+                            <h3 style={{color: '#f5576c', marginBottom: '15px', fontSize: '24px', textAlign: 'center'}}>
+                                ⭐ Самооценка ключевых компетенций
+                            </h3>
+                            <p style={{color: '#666', marginBottom: '25px', fontSize: '16px', textAlign: 'center'}}>
+                                Перед началом теста оцените свой уровень владения основными компетенциями по шкале от 1 до 10
+                            </p>
+                            <p style={{color: '#999', marginBottom: '25px', fontSize: '14px', textAlign: 'center', fontStyle: 'italic'}}>
+                                1 = начальный уровень, 10 = экспертный уровень
+                            </p>
+
+                            {competencies.map(comp => (
+                                <div key={comp.id} style={{
+                                    marginBottom: '25px',
+                                    padding: '20px',
+                                    background: '#f8f9fa',
+                                    borderRadius: '10px'
+                                }}>
+                                    <div style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        alignItems: 'center',
+                                        marginBottom: '15px',
+                                        flexWrap: 'wrap'
+                                    }}>
+                                        <div style={{flex: 1, minWidth: '200px'}}>
+                                            <strong style={{fontSize: '16px', color: '#333'}}>
+                                                {comp.name}
+                                            </strong>
+                                            <span style={{
+                                                marginLeft: '10px',
+                                                padding: '4px 10px',
+                                                background: '#f5576c',
+                                                color: 'white',
+                                                borderRadius: '12px',
+                                                fontSize: '12px',
+                                                fontWeight: 'bold'
+                                            }}>
+                                                CORE {comp.importance}%
+                                            </span>
+                                        </div>
+                                        {selfRatings[comp.id] && (
+                                            <div style={{
+                                                marginTop: '8px',
+                                                padding: '6px 12px',
+                                                background: '#1DB584',
+                                                color: 'white',
+                                                borderRadius: '8px',
+                                                fontSize: '14px',
+                                                fontWeight: 'bold'
+                                            }}>
+                                                Оценка: {selfRatings[comp.id]}/10
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div style={{
+                                        display: 'flex',
+                                        gap: '8px',
+                                        flexWrap: 'wrap',
+                                        justifyContent: 'center'
+                                    }}>
+                                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(rating => (
+                                            <button
+                                                key={rating}
+                                                onClick={() => {
+                                                    setSelfRatings({...selfRatings, [comp.id]: rating});
+                                                }}
+                                                style={{
+                                                    width: '45px',
+                                                    height: '45px',
+                                                    borderRadius: '8px',
+                                                    border: selfRatings[comp.id] === rating
+                                                        ? '3px solid #f5576c'
+                                                        : '2px solid #ddd',
+                                                    background: selfRatings[comp.id] === rating
+                                                        ? '#f5576c'
+                                                        : 'white',
+                                                    color: selfRatings[comp.id] === rating ? 'white' : '#333',
+                                                    fontSize: '16px',
+                                                    fontWeight: 'bold',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.2s'
+                                                }}
+                                            >
+                                                {rating}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+
+                            <button
+                                className="btn"
+                                onClick={submitSelfAssessment}
+                                style={{
+                                    width: '100%',
+                                    marginTop: '20px',
+                                    padding: '15px',
+                                    fontSize: '18px',
+                                    fontWeight: 'bold',
+                                    background: Object.keys(selfRatings).length === competencies.length
+                                        ? 'linear-gradient(135deg, #f5576c 0%, #f093fb 100%)'
+                                        : '#ccc',
+                                    cursor: Object.keys(selfRatings).length === competencies.length
+                                        ? 'pointer'
+                                        : 'not-allowed'
+                                }}
+                                disabled={Object.keys(selfRatings).length !== competencies.length}
+                            >
+                                Начать тест ({Object.keys(selfRatings).length}/{competencies.length} компетенций оценено)
+                            </button>
+                        </div>
                     </div>
                 );
             }
 
             if (completed) {
+                console.log('📊 RENDERING COMPLETION PAGE');
+                console.log('  - showSelfAssessment:', showSelfAssessment);
+                console.log('  - competencies.length:', competencies.length);
+                console.log('  - selfAssessmentSubmitted:', selfAssessmentSubmitted);
+                console.log('  - Will show self-assessment?', showSelfAssessment && !selfAssessmentSubmitted && competencies.length > 0);
+
                 return (
                     <div className="test-container">
                         <div className="completion">
@@ -366,7 +798,7 @@
                                 {result.score}/{result.max_score}
                             </div>
                             <div className="level-badge">{result.level}</div>
-                            
+
                             {!result.recommendation && (
                                 <div style={{
                                     marginTop: '30px',
@@ -383,7 +815,7 @@
                                     </p>
                                 </div>
                             )}
-                            
+
                             {result.recommendation && (
                                 <div style={{
                                     marginTop: '30px',
@@ -395,14 +827,145 @@
                                     <h3 style={{color: '#1DB584', marginBottom: '12px'}}>
                                         💡 Рекомендация AI
                                     </h3>
-                                    <p style={{color: '#333', fontSize: '16px', lineHeight: '1.6'}}>
+                                    <p style={{color: '#333', fontSize: '16px', lineHeight: '1.6', whiteSpace: 'pre-wrap'}}>
                                         {result.recommendation}
                                     </p>
                                 </div>
                             )}
-                            
-                            <button 
-                                className="btn" 
+
+                            {/* Self-Assessment moved to BEFORE test - this section no longer needed */}
+                            {false && showSelfAssessment && !selfAssessmentSubmitted && competencies.length > 0 && (
+                                <div style={{
+                                    marginTop: '30px',
+                                    padding: '25px',
+                                    background: '#fff',
+                                    borderRadius: '12px',
+                                    border: '2px solid #f5576c',
+                                    boxShadow: '0 4px 12px rgba(245, 87, 108, 0.1)'
+                                }}>
+                                    <h3 style={{color: '#f5576c', marginBottom: '15px', fontSize: '20px'}}>
+                                        ⭐ Самооценка ключевых компетенций
+                                    </h3>
+                                    <p style={{color: '#666', marginBottom: '25px', fontSize: '15px'}}>
+                                        Оцените свой уровень владения основными компетенциями по шкале от 1 до 10
+                                    </p>
+
+                                    {competencies.map(comp => (
+                                        <div key={comp.id} style={{
+                                            marginBottom: '25px',
+                                            padding: '20px',
+                                            background: '#f8f9fa',
+                                            borderRadius: '10px'
+                                        }}>
+                                            <div style={{
+                                                display: 'flex',
+                                                justifyContent: 'space-between',
+                                                alignItems: 'center',
+                                                marginBottom: '15px',
+                                                flexWrap: 'wrap'
+                                            }}>
+                                                <div style={{flex: 1, minWidth: '200px'}}>
+                                                    <strong style={{fontSize: '15px', color: '#333'}}>
+                                                        {comp.name}
+                                                    </strong>
+                                                    <span style={{
+                                                        marginLeft: '10px',
+                                                        padding: '4px 10px',
+                                                        background: '#f5576c',
+                                                        color: 'white',
+                                                        borderRadius: '12px',
+                                                        fontSize: '12px',
+                                                        fontWeight: 'bold'
+                                                    }}>
+                                                        CORE {comp.importance}%
+                                                    </span>
+                                                </div>
+                                                {selfRatings[comp.id] && (
+                                                    <div style={{
+                                                        marginTop: '8px',
+                                                        padding: '6px 14px',
+                                                        background: '#1DB584',
+                                                        color: 'white',
+                                                        borderRadius: '20px',
+                                                        fontSize: '14px',
+                                                        fontWeight: 'bold'
+                                                    }}>
+                                                        Выбрано: {selfRatings[comp.id]}/10
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div style={{
+                                                display: 'flex',
+                                                gap: '8px',
+                                                flexWrap: 'wrap',
+                                                justifyContent: 'center'
+                                            }}>
+                                                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(rating => (
+                                                    <button
+                                                        key={rating}
+                                                        onClick={() => setSelfRatings({...selfRatings, [comp.id]: rating})}
+                                                        style={{
+                                                            minWidth: '45px',
+                                                            height: '45px',
+                                                            borderRadius: '8px',
+                                                            border: '2px solid',
+                                                            borderColor: selfRatings[comp.id] === rating ? '#f5576c' : '#ddd',
+                                                            background: selfRatings[comp.id] === rating
+                                                                ? 'linear-gradient(135deg, #f5576c 0%, #f093fb 100%)'
+                                                                : 'white',
+                                                            color: selfRatings[comp.id] === rating ? 'white' : '#333',
+                                                            fontSize: '16px',
+                                                            fontWeight: 'bold',
+                                                            cursor: 'pointer',
+                                                            transition: 'all 0.2s',
+                                                            transform: selfRatings[comp.id] === rating ? 'scale(1.1)' : 'scale(1)'
+                                                        }}
+                                                        onMouseEnter={(e) => {
+                                                            if (selfRatings[comp.id] !== rating) {
+                                                                e.target.style.borderColor = '#f5576c';
+                                                                e.target.style.background = '#fff5f7';
+                                                            }
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            if (selfRatings[comp.id] !== rating) {
+                                                                e.target.style.borderColor = '#ddd';
+                                                                e.target.style.background = 'white';
+                                                            }
+                                                        }}
+                                                    >
+                                                        {rating}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+
+                                    <button
+                                        className="btn"
+                                        onClick={submitSelfAssessment}
+                                        style={{
+                                            width: '100%',
+                                            marginTop: '20px',
+                                            padding: '15px',
+                                            fontSize: '16px',
+                                            fontWeight: 'bold',
+                                            background: Object.keys(selfRatings).length === competencies.length
+                                                ? 'linear-gradient(135deg, #f5576c 0%, #f093fb 100%)'
+                                                : '#ccc',
+                                            cursor: Object.keys(selfRatings).length === competencies.length
+                                                ? 'pointer'
+                                                : 'not-allowed'
+                                        }}
+                                        disabled={Object.keys(selfRatings).length !== competencies.length}
+                                    >
+                                        Отправить самооценку ({Object.keys(selfRatings).length}/{competencies.length})
+                                    </button>
+                                </div>
+                            )}
+
+                            <button
+                                className="btn"
                                 onClick={() => window.location.href = '/'}
                                 style={{marginTop: '30px'}}
                             >
@@ -413,8 +976,17 @@
                 );
             }
 
+            // Don't render test if questions aren't loaded yet
+            if (!questions || questions.length === 0) {
+                return (
+                    <div className="test-container">
+                        <div className="loading">Загрузка вопросов...</div>
+                    </div>
+                );
+            }
+
             const currentQuestion = questions[currentIndex];
-            const overallProgress = progress ? 
+            const overallProgress = progress ?
                 ((progress.total.answered / progress.total.total) * 100) : 0;
 
             return (

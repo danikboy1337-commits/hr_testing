@@ -118,7 +118,7 @@
         <div class="logo">
             <img src="/static/images/Halyk_LogoName.png" alt="Халык банк">
         </div>
-        <h1>📊 Панель менеджера</h1>
+        <h1>📊 Панель руководителя</h1>
 
         <div class="menu-buttons">
             <a href="/manager/results" class="menu-btn">
@@ -126,6 +126,14 @@
                 <div class="menu-content">
                     <div class="menu-title">Результаты и статистика отдела</div>
                     <div class="menu-desc">Просмотр результатов и аналитики вашего отдела</div>
+                </div>
+            </a>
+
+            <a href="/manager/ratings" class="menu-btn">
+                <div class="menu-icon">⭐</div>
+                <div class="menu-content">
+                    <div class="menu-title">Оценка сотрудников</div>
+                    <div class="menu-desc">Оцените работу сотрудников вашего отдела (1-10)</div>
                 </div>
             </a>
         </div>
@@ -138,10 +146,10 @@
         async function logout(e) {
             e.preventDefault();
 
-            localStorage.removeItem('halyk_token');
-            localStorage.removeItem('halyk_user_name');
-            localStorage.removeItem('halyk_user_role');
-            localStorage.removeItem('halyk_user_department');
+            sessionStorage.removeItem('halyk_token');
+            sessionStorage.removeItem('halyk_user_name');
+            sessionStorage.removeItem('halyk_user_role');
+            sessionStorage.removeItem('halyk_user_department');
             window.location.href = '/';
         }
     </script>

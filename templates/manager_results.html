@@ -186,9 +186,6 @@
 
         .results-table thead {
             background: #f8f9fa;
-            position: sticky;
-            top: 70px;
-            z-index: 10;
         }
 
         .results-table th {
@@ -199,6 +196,7 @@
             border-bottom: 2px solid #e0e0e0;
             font-size: 13px;
             text-transform: uppercase;
+            background: #f8f9fa;
         }
 
         .results-table td {
@@ -464,11 +462,20 @@
         <div class="header-actions">
             <button class="btn btn-primary" onclick="exportToCSV()">📥 Экспорт CSV</button>
             <a href="/manager/menu" class="btn btn-secondary">◀ Назад</a>
-            <button class="btn btn-danger" onclick="logout()">Выйти</button>
         </div>
     </div>
 
     <div class="container">
+        <!-- Weighted Score Explanation -->
+        <div class="info-banner" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 30px; border-radius: 12px; margin-bottom: 30px;">
+            <h2 style="font-size: 20px; margin-bottom: 10px;">📊 Новая система оценки с весовыми коэффициентами</h2>
+            <p style="opacity: 0.95; font-size: 14px; line-height: 1.6; margin-bottom: 5px;">
+                <strong>Итоговая оценка рассчитывается по формуле:</strong><br>
+                🎯 <strong>Итоговый балл = Тест (50%) + Оценка руководителя (40%) + Самооценка (10%)</strong><br>
+                Это позволяет получить комплексную оценку компетенций сотрудника с учетом всех факторов.
+            </p>
+        </div>
+
         <!-- Statistics -->
         <div class="stats-grid" id="statsGrid">
             <div class="stat-card">
@@ -557,8 +564,11 @@
                             <th>Компания</th>
                             <th>Должность</th>
                             <th>Специализация</th>
-                            <th>Балл</th>
-                            <th>%</th>
+                            <th>Балл теста</th>
+                            <th>% теста</th>
+                            <th>Оценка рук.</th>
+                            <th>Самооценка</th>
+                            <th>Итог (взвеш.)</th>
                             <th>Уровень</th>
                             <th>Время</th>
                             <th>Дата</th>
@@ -567,7 +577,7 @@
                     </thead>
                     <tbody id="resultsBody">
                         <tr>
-                            <td colspan="12" class="loader">Загрузка...</td>
+                            <td colspan="14" class="loader">Загрузка...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -595,29 +605,44 @@
 
         async function loadStatistics() {
             try {
-                const token = localStorage.getItem("halyk_token");
+                const token = sessionStorage.getItem("halyk_token");
+                if (!token) {
+                    console.error('No token found');
+                    window.location.href = '/';
+                    return;
+                }
+
                 const response = await fetch("/api/manager/results/stats", {
                     headers: { "Authorization": `Bearer ${token}` }
                 });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
                 const data = await response.json();
 
-                document.getElementById('totalTests').textContent = data.overall.total_tests;
-                document.getElementById('avgScore').textContent = data.overall.avg_percentage + '%';
-                document.getElementById('seniorCount').textContent = data.by_level['Senior'] || 0;
-                document.getElementById('middleCount').textContent = data.by_level['Middle'] || 0;
-                document.getElementById('juniorCount').textContent = data.by_level['Junior'] || 0;
-                document.getElementById('avgDuration').textContent = data.overall.avg_duration_minutes;
+                if (data.status === 'success' && data.overall) {
+                    document.getElementById('totalTests').textContent = data.overall.total_tests;
+                    document.getElementById('avgScore').textContent = data.overall.avg_percentage + '%';
+                    document.getElementById('seniorCount').textContent = data.by_level['Senior'] || 0;
+                    document.getElementById('middleCount').textContent = data.by_level['Middle'] || 0;
+                    document.getElementById('juniorCount').textContent = data.by_level['Junior'] || 0;
+                    document.getElementById('avgDuration').textContent = data.overall.avg_duration_minutes;
 
-                // Populate specialization filter
-                const specFilter = document.getElementById('filterSpec');
-                data.by_specialization.forEach(spec => {
-                    const option = document.createElement('option');
-                    option.value = spec.name;
-                    option.textContent = `${spec.name} (${spec.count})`;
-                    specFilter.appendChild(option);
-                });
+                    // Populate specialization filter
+                    const specFilter = document.getElementById('filterSpec');
+                    data.by_specialization.forEach(spec => {
+                        const option = document.createElement('option');
+                        option.value = spec.name;
+                        option.textContent = `${spec.name} (${spec.count})`;
+                        specFilter.appendChild(option);
+                    });
+                }
             } catch (error) {
                 console.error('Error loading statistics:', error);
+                document.getElementById('totalTests').textContent = '❌';
+                document.getElementById('avgScore').textContent = 'Ошибка';
             }
         }
 
@@ -637,18 +662,34 @@
                 if (dateTo) params.append('date_to', dateTo);
                 if (search) params.append('search', search);
 
-                const token = localStorage.getItem("halyk_token");
+                const token = sessionStorage.getItem("halyk_token");
+                if (!token) {
+                    console.error('No token found');
+                    window.location.href = '/';
+                    return;
+                }
+
                 const response = await fetch("/api/manager/results?" + params.toString(), {
                     headers: { "Authorization": `Bearer ${token}` }
                 });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+
                 const data = await response.json();
 
-                allResults = data.results;
-                renderResults(data.results);
+                if (data.status === 'success' && data.results) {
+                    allResults = data.results;
+                    renderResults(data.results);
+                } else {
+                    throw new Error('Invalid response format');
+                }
             } catch (error) {
                 console.error('Error loading results:', error);
                 document.getElementById('resultsBody').innerHTML =
-                    '<tr><td colspan="12" class="empty-state"><div class="empty-state-icon">❌</div><div class="empty-state-text">Ошибка загрузки данных</div></td></tr>';
+                    `<tr><td colspan="12" class="empty-state"><div class="empty-state-icon">❌</div><div class="empty-state-text">Ошибка загрузки данных: ${error.message}</div></td></tr>`;
             }
         }
 
@@ -659,7 +700,7 @@
             if (results.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="12" class="empty-state">
+                        <td colspan="15" class="empty-state">
                             <div class="empty-state-icon">📭</div>
                             <div class="empty-state-text">Нет результатов</div>
                         </td>
@@ -677,6 +718,36 @@
                     minute: '2-digit'
                 });
 
+                // Render manager rating (avg of competency ratings)
+                let managerRatingHtml = '-';
+                if (result.avg_manager_rating) {
+                    const avgRating = parseFloat(result.avg_manager_rating).toFixed(1);
+                    const ratingClass = avgRating >= 8 ? 'level-senior' :
+                                       avgRating >= 5 ? 'level-middle' : 'level-junior';
+                    managerRatingHtml = `<span class="level-badge ${ratingClass}">⭐ ${avgRating}/10</span>`;
+                }
+
+                // Render self-assessment
+                let selfAssessmentHtml = '-';
+                if (result.avg_self_rating) {
+                    const avgSelfRating = parseFloat(result.avg_self_rating).toFixed(1);
+                    const ratingClass = avgSelfRating >= 8 ? 'level-senior' :
+                                       avgSelfRating >= 5 ? 'level-middle' : 'level-junior';
+                    selfAssessmentHtml = `<span class="level-badge ${ratingClass}">📝 ${avgSelfRating}/10</span>`;
+                }
+
+                // Render weighted score
+                let weightedScoreHtml = '-';
+                if (result.weighted_score !== null && result.weighted_score !== undefined) {
+                    const weightedScore = parseFloat(result.weighted_score).toFixed(1);
+                    const scoreClass = weightedScore >= 67 ? 'level-senior' :
+                                      weightedScore >= 34 ? 'level-middle' : 'level-junior';
+                    const title = `Тест: ${result.percentage}% (50%)\n` +
+                                 `Руководитель: ${result.avg_manager_rating ? parseFloat(result.avg_manager_rating).toFixed(1) : '0'}/10 (40%)\n` +
+                                 `Самооценка: ${result.avg_self_rating ? parseFloat(result.avg_self_rating).toFixed(1) : '0'}/10 (10%)`;
+                    weightedScoreHtml = `<span class="level-badge ${scoreClass}" title="${title}" style="cursor: help; font-size: 16px; font-weight: 800;">🎯 ${weightedScore}%</span>`;
+                }
+
                 return `
                     <tr>
                         <td>${result.test_id}</td>
@@ -687,6 +758,9 @@
                         <td>${result.specialization}</td>
                         <td class="score-display">${result.score}/${result.max_score}</td>
                         <td><strong>${result.percentage}%</strong></td>
+                        <td>${managerRatingHtml}</td>
+                        <td>${selfAssessmentHtml}</td>
+                        <td>${weightedScoreHtml}</td>
                         <td><span class="level-badge level-${result.level.toLowerCase()}">${result.level}</span></td>
                         <td>${result.duration_minutes ? result.duration_minutes + ' мин' : '-'}</td>
                         <td>${completedDate}</td>
@@ -701,10 +775,19 @@
             document.getElementById('modalBody').innerHTML = '<div class="loader">Загрузка...</div>';
 
             try {
-                const token = localStorage.getItem("halyk_token");
+                const token = sessionStorage.getItem("halyk_token");
+                if (!token) {
+                    throw new Error('No authentication token found');
+                }
+
                 const response = await fetch(`/api/manager/results/${testId}`, {
                     headers: { "Authorization": `Bearer ${token}` }
                 });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
                 const data = await response.json();
 
                 const info = data.test_info;
@@ -906,14 +989,6 @@
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-        }
-
-        async function logout() {
-            await fetch('/api/hr/logout', {
-                method: 'POST',
-                credentials: 'include'
-            });
-            window.location.href = '/hr';
         }
 
         // Close modal on outside click

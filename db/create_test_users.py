@@ -44,7 +44,7 @@ async def create_test_users():
         # Backend Development Managers
         {
             "name": "Бекенд",
-            "surname": "Менеджер",
+            "surname": "Руководитель",
             "phone": "+77002222221",
             "company": "Халык банк",
             "job_title": "Backend Team Lead",
@@ -55,7 +55,7 @@ async def create_test_users():
         # Frontend Development Manager
         {
             "name": "Фронтенд",
-            "surname": "Менеджер",
+            "surname": "Руководитель",
             "phone": "+77002222222",
             "company": "Халык банк",
             "job_title": "Frontend Team Lead",
@@ -66,7 +66,7 @@ async def create_test_users():
         # Mobile Development Manager
         {
             "name": "Мобайл",
-            "surname": "Менеджер",
+            "surname": "Руководитель",
             "phone": "+77002222223",
             "company": "Халык банк",
             "job_title": "Mobile Team Lead",
@@ -77,7 +77,7 @@ async def create_test_users():
         # Data Science Manager
         {
             "name": "Дата",
-            "surname": "Менеджер",
+            "surname": "Руководитель",
             "phone": "+77002222224",
             "company": "Халык банк",
             "job_title": "Data Science Lead",

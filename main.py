@@ -68,6 +68,9 @@ class AnswerSubmit(BaseModel):
     question_id: int
     user_answer: int
 
+class SelfAssessmentSubmit(BaseModel):
+    assessments: list[dict]  # [{"competency_id": 1, "self_rating": 8}, ...]
+
 class LoginRequest(BaseModel):
     phone: str
 
@@ -470,6 +473,15 @@ async def hr_results_page(hr_user: dict = Depends(verify_hr_cookie)):
     with open('templates/hr_results.html', 'r', encoding='utf-8') as f:
         return HTMLResponse(content=f.read())
 
+@app.get("/hr/ratings", response_class=HTMLResponse)
+async def hr_ratings_page(hr_user: dict = Depends(verify_hr_cookie)):
+    """HR ratings page - protected"""
+    if not hr_user:
+        return RedirectResponse(url="/hr", status_code=303)
+
+    with open('templates/hr_ratings.html', 'r', encoding='utf-8') as f:
+        return HTMLResponse(content=f.read())
+
 @app.get("/hr/diagnostic", response_class=HTMLResponse)
 async def hr_diagnostic_page():
     """HR diagnostic tool"""
@@ -499,6 +511,12 @@ async def manager_menu_page():
 async def manager_results_page():
     """Manager results page"""
     with open('templates/manager_results.html', 'r', encoding='utf-8') as f:
+        return HTMLResponse(content=f.read())
+
+@app.get("/manager/ratings", response_class=HTMLResponse)
+async def manager_ratings_page():
+    """Manager employee ratings page"""
+    with open('templates/manager_ratings.html', 'r', encoding='utf-8') as f:
         return HTMLResponse(content=f.read())
 
 # =====================================================
@@ -857,6 +875,123 @@ async def complete_test(user_test_id: int, current_user: dict = Depends(get_curr
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/test/{user_test_id}/top-competencies")
+async def get_top_competencies(user_test_id: int, current_user: dict = Depends(get_current_user)):
+    """Get top CORE competencies for self-assessment BEFORE test starts"""
+    user_id = current_user["user_id"]
+    print(f"🔍 Loading competencies for test {user_test_id}, user {user_id}")
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Verify test belongs to user
+                await cur.execute(
+                    "SELECT user_id, specialization_id FROM user_specialization_tests WHERE id = %s",
+                    (user_test_id,)
+                )
+                test_data = await cur.fetchone()
+                print(f"  Test data: {test_data}")
+
+                if not test_data:
+                    raise HTTPException(status_code=404, detail="Test not found")
+                if test_data[0] != user_id:
+                    raise HTTPException(status_code=403, detail="Access denied")
+
+                specialization_id = test_data[1]
+                print(f"  Specialization ID: {specialization_id}")
+
+                # Check if self-assessment already submitted
+                await cur.execute("""
+                    SELECT COUNT(*) FROM competency_self_assessments
+                    WHERE user_test_id = %s
+                """, (user_test_id,))
+                already_submitted = (await cur.fetchone())[0] > 0
+                print(f"  Self-assessment already submitted: {already_submitted}")
+
+                # Get top CORE competencies for this specialization (importance >= 70)
+                await cur.execute("""
+                    SELECT c.id, c.name, c.importance
+                    FROM competencies c
+                    WHERE c.specialization_id = %s
+                    AND c.importance >= 70
+                    ORDER BY c.importance DESC
+                    LIMIT 10
+                """, (specialization_id,))
+
+                competencies = []
+                for row in await cur.fetchall():
+                    competencies.append({
+                        "id": row[0],
+                        "name": row[1],
+                        "importance": row[2]
+                    })
+
+                print(f"  ✅ Found {len(competencies)} competencies, already_submitted: {already_submitted}")
+                return {
+                    "status": "success",
+                    "competencies": competencies,
+                    "already_submitted": already_submitted
+                }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"  ❌ ERROR in top-competencies: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {str(e)}")
+
+@app.post("/api/test/{user_test_id}/self-assessment")
+async def submit_self_assessment(
+    user_test_id: int,
+    data: SelfAssessmentSubmit,
+    current_user: dict = Depends(get_current_user)
+):
+    """Submit self-assessment ratings for competencies"""
+    user_id = current_user["user_id"]
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Verify test belongs to user
+                await cur.execute(
+                    "SELECT user_id FROM user_specialization_tests WHERE id = %s",
+                    (user_test_id,)
+                )
+                test_data = await cur.fetchone()
+
+                if not test_data:
+                    raise HTTPException(status_code=404, detail="Test not found")
+                if test_data[0] != user_id:
+                    raise HTTPException(status_code=403, detail="Access denied")
+
+                # Insert self-assessments
+                for assessment in data.assessments:
+                    competency_id = assessment.get("competency_id")
+                    self_rating = assessment.get("self_rating")
+
+                    if not competency_id or not self_rating:
+                        continue
+
+                    if self_rating < 1 or self_rating > 10:
+                        raise HTTPException(status_code=400, detail="Rating must be between 1 and 10")
+
+                    await cur.execute("""
+                        INSERT INTO competency_self_assessments
+                        (user_test_id, user_id, competency_id, self_rating)
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT (user_test_id, competency_id)
+                        DO UPDATE SET self_rating = EXCLUDED.self_rating
+                    """, (user_test_id, user_id, competency_id, self_rating))
+
+                await conn.commit()
+
+                return {
+                    "status": "success",
+                    "message": "Self-assessment submitted successfully"
+                }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/results/{user_test_id}")
 async def get_results(user_test_id: int, current_user: dict = Depends(get_current_user)):
     user_id = current_user["user_id"]
@@ -914,8 +1049,8 @@ async def get_dashboard_stats():
                 
                 await cur.execute("""
                     SELECT 
-                        CASE WHEN (score::float / max_score * 100) >= 80 THEN 'Senior'
-                             WHEN (score::float / max_score * 100) >= 50 THEN 'Middle'
+                        CASE WHEN (score::numeric / max_score * 100) >= 80 THEN 'Senior'
+                             WHEN (score::numeric / max_score * 100) >= 50 THEN 'Middle'
                              ELSE 'Junior' END as level,
                         COUNT(*) as count
                     FROM user_specialization_tests
@@ -1066,15 +1201,26 @@ async def get_hr_results(
                 p.name as profile,
                 ust.score,
                 ust.max_score,
-                ROUND((ust.score::float / ust.max_score::float * 100), 2) as percentage,
+                ROUND((ust.score::numeric / ust.max_score::numeric * 100), 2) as percentage,
                 CASE
-                    WHEN (ust.score::float / ust.max_score::float * 100) >= 67 THEN 'Senior'
-                    WHEN (ust.score::float / ust.max_score::float * 100) >= 34 THEN 'Middle'
+                    WHEN (ust.score::numeric / ust.max_score::numeric * 100) >= 67 THEN 'Senior'
+                    WHEN (ust.score::numeric / ust.max_score::numeric * 100) >= 34 THEN 'Middle'
                     ELSE 'Junior'
                 END as level,
                 ust.started_at,
                 ust.completed_at,
-                EXTRACT(EPOCH FROM (ust.completed_at - ust.started_at)) as duration_seconds
+                EXTRACT(EPOCH FROM (ust.completed_at - ust.started_at)) as duration_seconds,
+                (
+                    SELECT json_agg(json_build_object(
+                        'competency_id', csa.competency_id,
+                        'competency_name', c.name,
+                        'self_rating', csa.self_rating,
+                        'importance', c.importance
+                    ) ORDER BY c.importance DESC)
+                    FROM competency_self_assessments csa
+                    JOIN competencies c ON csa.competency_id = c.id
+                    WHERE csa.user_test_id = ust.id
+                ) as self_assessments
             FROM user_specialization_tests ust
             JOIN users u ON ust.user_id = u.id
             JOIN specializations s ON ust.specialization_id = s.id
@@ -1083,39 +1229,34 @@ async def get_hr_results(
         """
 
         params = []
-        param_count = 1
 
         if specialization_id:
-            query += f" AND ust.specialization_id = ${param_count}"
+            query += " AND ust.specialization_id = %s"
             params.append(specialization_id)
-            param_count += 1
         elif specialization:
-            query += f" AND s.name = ${param_count}"
+            query += " AND s.name = %s"
             params.append(specialization)
-            param_count += 1
 
         if level:
             if level == 'Senior':
-                query += " AND (ust.score::float / ust.max_score::float * 100) >= 67"
+                query += " AND (ust.score::numeric / ust.max_score::numeric * 100) >= 67"
             elif level == 'Middle':
-                query += " AND (ust.score::float / ust.max_score::float * 100) >= 34 AND (ust.score::float / ust.max_score::float * 100) < 67"
+                query += " AND (ust.score::numeric / ust.max_score::numeric * 100) >= 34 AND (ust.score::numeric / ust.max_score::numeric * 100) < 67"
             elif level == 'Junior':
-                query += " AND (ust.score::float / ust.max_score::float * 100) < 34"
+                query += " AND (ust.score::numeric / ust.max_score::numeric * 100) < 34"
 
         if date_from:
-            query += f" AND ust.completed_at >= ${param_count}"
+            query += " AND ust.completed_at >= %s"
             params.append(date_from)
-            param_count += 1
 
         if date_to:
-            query += f" AND ust.completed_at <= ${param_count}"
+            query += " AND ust.completed_at <= %s"
             params.append(date_to)
-            param_count += 1
 
         if search:
-            query += f" AND (LOWER(u.name) LIKE LOWER(${param_count}) OR LOWER(u.surname) LIKE LOWER(${param_count}) OR LOWER(u.phone) LIKE LOWER(${param_count}))"
-            params.append(f"%{search}%")
-            param_count += 1
+            search_param = f"%{search}%"
+            query += " AND (LOWER(u.name) LIKE LOWER(%s) OR LOWER(u.surname) LIKE LOWER(%s) OR LOWER(u.phone) LIKE LOWER(%s))"
+            params.extend([search_param, search_param, search_param])
 
         query += " ORDER BY ust.completed_at DESC"
 
@@ -1134,6 +1275,72 @@ async def get_hr_results(
                     results.append(result)
 
                 return {"status": "success", "results": results, "count": len(results)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/hr/results/stats")
+async def get_hr_results_stats():
+    """Get statistical analysis of all results"""
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Overall stats
+                await cur.execute("""
+                    SELECT
+                        COUNT(*) as total_tests,
+                        AVG(score::numeric / max_score::numeric * 100) as avg_percentage,
+                        MIN(score::numeric / max_score::numeric * 100) as min_percentage,
+                        MAX(score::numeric / max_score::numeric * 100) as max_percentage,
+                        AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60) as avg_duration_minutes
+                    FROM user_specialization_tests
+                    WHERE completed_at IS NOT NULL
+                """)
+                overall = await cur.fetchone()
+
+                # By specialization
+                await cur.execute("""
+                    SELECT
+                        s.name,
+                        COUNT(*) as count,
+                        AVG(ust.score::numeric / ust.max_score::numeric * 100) as avg_percentage
+                    FROM user_specialization_tests ust
+                    JOIN specializations s ON ust.specialization_id = s.id
+                    WHERE ust.completed_at IS NOT NULL
+                    GROUP BY s.name
+                    ORDER BY count DESC
+                """)
+                by_spec = await cur.fetchall()
+
+                # By level
+                await cur.execute("""
+                    SELECT
+                        CASE
+                            WHEN (score::numeric / max_score::numeric * 100) >= 67 THEN 'Senior'
+                            WHEN (score::numeric / max_score::numeric * 100) >= 34 THEN 'Middle'
+                            ELSE 'Junior'
+                        END as level,
+                        COUNT(*) as count
+                    FROM user_specialization_tests
+                    WHERE completed_at IS NOT NULL
+                    GROUP BY level
+                """)
+                by_level = await cur.fetchall()
+
+                return {
+                    "status": "success",
+                    "overall": {
+                        "total_tests": overall[0],
+                        "avg_percentage": round(overall[1], 2) if overall[1] else 0,
+                        "min_percentage": round(overall[2], 2) if overall[2] else 0,
+                        "max_percentage": round(overall[3], 2) if overall[3] else 0,
+                        "avg_duration_minutes": round(overall[4], 1) if overall[4] else 0
+                    },
+                    "by_specialization": [
+                        {"name": row[0], "count": row[1], "avg_percentage": round(row[2], 2)}
+                        for row in by_spec
+                    ],
+                    "by_level": {row[0]: row[1] for row in by_level}
+                }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1235,52 +1442,212 @@ async def get_hr_result_detail(test_id: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/hr/results/stats")
-async def get_hr_results_stats():
-    """Get statistical analysis of all results"""
+
+# =====================================================
+# API - MANAGER RESULTS (Department-filtered)
+# =====================================================
+async def get_current_manager(authorization: Optional[str] = Header(None)):
+    """Extract manager info from token"""
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
+    token = authorization.split(' ')[1]
+    user_data = verify_token(token)
+    if not user_data or user_data.get("role") != "manager":
+        raise HTTPException(status_code=403, detail="Доступ только для руководителей")
+    if not user_data.get("department_id"):
+        raise HTTPException(status_code=400, detail="У руководителя не указан отдел")
+    return user_data
+
+@app.get("/api/manager/results")
+async def get_manager_results(
+    manager: dict = Depends(get_current_manager),
+    specialization_id: Optional[int] = None,
+    specialization: Optional[str] = None,
+    level: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    search: Optional[str] = None
+):
+    """Get test results for manager's department only"""
+    department_id = manager.get("department_id")
+    manager_id = manager.get("user_id")
+
+    try:
+        query = """
+            SELECT
+                ust.id as test_id,
+                u.id as user_id,
+                u.name,
+                u.surname,
+                u.phone,
+                u.company,
+                u.job_title,
+                s.name as specialization,
+                p.name as profile,
+                ust.score,
+                ust.max_score,
+                ROUND((ust.score::numeric / ust.max_score::numeric * 100), 2) as percentage,
+                CASE
+                    WHEN (ust.score::numeric / ust.max_score::numeric * 100) >= 67 THEN 'Senior'
+                    WHEN (ust.score::numeric / ust.max_score::numeric * 100) >= 34 THEN 'Middle'
+                    ELSE 'Junior'
+                END as level,
+                ust.started_at,
+                ust.completed_at,
+                EXTRACT(EPOCH FROM (ust.completed_at - ust.started_at)) as duration_seconds,
+                (
+                    SELECT json_agg(json_build_object(
+                        'competency_id', csa.competency_id,
+                        'competency_name', c.name,
+                        'self_rating', csa.self_rating,
+                        'importance', c.importance
+                    ) ORDER BY c.importance DESC)
+                    FROM competency_self_assessments csa
+                    JOIN competencies c ON csa.competency_id = c.id
+                    WHERE csa.user_test_id = ust.id
+                ) as self_assessments,
+                (
+                    SELECT AVG(mcr.rating)
+                    FROM manager_competency_ratings mcr
+                    WHERE mcr.user_test_id = ust.id AND mcr.manager_id = %s
+                ) as avg_manager_rating,
+                (
+                    SELECT AVG(csa.self_rating)
+                    FROM competency_self_assessments csa
+                    WHERE csa.user_test_id = ust.id
+                ) as avg_self_rating,
+                ROUND(
+                    (ust.score::numeric / ust.max_score::numeric * 100 * 0.5) +
+                    COALESCE((
+                        SELECT AVG(mcr.rating) / 10.0 * 100 * 0.4
+                        FROM manager_competency_ratings mcr
+                        WHERE mcr.user_test_id = ust.id AND mcr.manager_id = %s
+                    ), 0) +
+                    COALESCE((
+                        SELECT AVG(csa.self_rating) / 10.0 * 100 * 0.1
+                        FROM competency_self_assessments csa
+                        WHERE csa.user_test_id = ust.id
+                    ), 0),
+                    2
+                ) as weighted_score
+            FROM user_specialization_tests ust
+            JOIN users u ON ust.user_id = u.id
+            JOIN specializations s ON ust.specialization_id = s.id
+            JOIN profiles p ON s.profile_id = p.id
+            WHERE ust.completed_at IS NOT NULL
+            AND u.department_id = %s
+        """
+
+        params = [manager_id, manager_id, department_id]
+
+        if specialization_id:
+            query += " AND ust.specialization_id = %s"
+            params.append(specialization_id)
+        elif specialization:
+            query += " AND s.name = %s"
+            params.append(specialization)
+
+        if level:
+            if level == 'Senior':
+                query += " AND (ust.score::numeric / ust.max_score::numeric * 100) >= 67"
+            elif level == 'Middle':
+                query += " AND (ust.score::numeric / ust.max_score::numeric * 100) >= 34 AND (ust.score::numeric / ust.max_score::numeric * 100) < 67"
+            elif level == 'Junior':
+                query += " AND (ust.score::numeric / ust.max_score::numeric * 100) < 34"
+
+        if date_from:
+            query += " AND ust.completed_at >= %s"
+            params.append(date_from)
+
+        if date_to:
+            query += " AND ust.completed_at <= %s"
+            params.append(date_to)
+
+        if search:
+            query += " AND (LOWER(u.name) LIKE LOWER(%s) OR LOWER(u.surname) LIKE LOWER(%s) OR LOWER(u.phone) LIKE LOWER(%s))"
+            search_param = f"%{search}%"
+            params.extend([search_param, search_param, search_param])
+
+        query += " ORDER BY ust.completed_at DESC"
+
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(query, tuple(params))
+                rows = await cur.fetchall()
+
+                if not rows:
+                    return {"status": "success", "results": [], "count": 0}
+
+                columns = [desc[0] for desc in cur.description]
+
+                results = []
+                for row in rows:
+                    result = dict(zip(columns, row))
+                    if result['duration_seconds']:
+                        result['duration_minutes'] = round(result['duration_seconds'] / 60, 1)
+                    results.append(result)
+
+                return {"status": "success", "results": results, "count": len(results)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/manager/results/stats")
+async def get_manager_results_stats(manager: dict = Depends(get_current_manager)):
+    """Get statistical analysis for manager's department only"""
+    department_id = manager.get("department_id")
+
     try:
         async with get_db_connection() as conn:
             async with conn.cursor() as cur:
-                # Overall stats
+                # Overall stats for department
                 await cur.execute("""
                     SELECT
                         COUNT(*) as total_tests,
-                        AVG(score::float / max_score::float * 100) as avg_percentage,
-                        MIN(score::float / max_score::float * 100) as min_percentage,
-                        MAX(score::float / max_score::float * 100) as max_percentage,
-                        AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60) as avg_duration_minutes
-                    FROM user_specialization_tests
-                    WHERE completed_at IS NOT NULL
-                """)
+                        AVG(ust.score::numeric / ust.max_score::numeric * 100) as avg_percentage,
+                        MIN(ust.score::numeric / ust.max_score::numeric * 100) as min_percentage,
+                        MAX(ust.score::numeric / ust.max_score::numeric * 100) as max_percentage,
+                        AVG(EXTRACT(EPOCH FROM (ust.completed_at - ust.started_at)) / 60) as avg_duration_minutes
+                    FROM user_specialization_tests ust
+                    JOIN users u ON ust.user_id = u.id
+                    WHERE ust.completed_at IS NOT NULL
+                    AND u.department_id = %s
+                """, (department_id,))
                 overall = await cur.fetchone()
 
-                # By specialization
+                # By specialization (department only)
                 await cur.execute("""
                     SELECT
                         s.name,
                         COUNT(*) as count,
-                        AVG(ust.score::float / ust.max_score::float * 100) as avg_percentage
+                        AVG(ust.score::numeric / ust.max_score::numeric * 100) as avg_percentage
                     FROM user_specialization_tests ust
+                    JOIN users u ON ust.user_id = u.id
                     JOIN specializations s ON ust.specialization_id = s.id
                     WHERE ust.completed_at IS NOT NULL
+                    AND u.department_id = %s
                     GROUP BY s.name
                     ORDER BY count DESC
-                """)
+                """, (department_id,))
                 by_spec = await cur.fetchall()
 
-                # By level
+                # By level (department only)
                 await cur.execute("""
                     SELECT
                         CASE
-                            WHEN (score::float / max_score::float * 100) >= 67 THEN 'Senior'
-                            WHEN (score::float / max_score::float * 100) >= 34 THEN 'Middle'
+                            WHEN (ust.score::numeric / ust.max_score::numeric * 100) >= 67 THEN 'Senior'
+                            WHEN (ust.score::numeric / ust.max_score::numeric * 100) >= 34 THEN 'Middle'
                             ELSE 'Junior'
                         END as level,
                         COUNT(*) as count
-                    FROM user_specialization_tests
-                    WHERE completed_at IS NOT NULL
+                    FROM user_specialization_tests ust
+                    JOIN users u ON ust.user_id = u.id
+                    WHERE ust.completed_at IS NOT NULL
+                    AND u.department_id = %s
                     GROUP BY level
-                """)
+                """, (department_id,))
                 by_level = await cur.fetchall()
 
                 return {
@@ -1298,119 +1665,6 @@ async def get_hr_results_stats():
                     ],
                     "by_level": {row[0]: row[1] for row in by_level}
                 }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# =====================================================
-# API - MANAGER RESULTS (Department-filtered)
-# =====================================================
-def get_current_manager(authorization: Optional[str] = Header(None)):
-    """Extract manager info from token"""
-    if not authorization or not authorization.startswith('Bearer '):
-        raise HTTPException(status_code=401, detail="Требуется авторизация")
-    token = authorization.split(' ')[1]
-    user_data = verify_token(token)
-    if not user_data or user_data.get("role") != "manager":
-        raise HTTPException(status_code=403, detail="Доступ только для менеджеров")
-    if not user_data.get("department_id"):
-        raise HTTPException(status_code=400, detail="У менеджера не указан отдел")
-    return user_data
-
-@app.get("/api/manager/results")
-async def get_manager_results(
-    manager: dict = Depends(get_current_manager),
-    specialization_id: Optional[int] = None,
-    specialization: Optional[str] = None,
-    level: Optional[str] = None,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
-    search: Optional[str] = None
-):
-    """Get test results for manager's department only"""
-    department_id = manager.get("department_id")
-
-    try:
-        query = """
-            SELECT
-                ust.id as test_id,
-                u.id as user_id,
-                u.name,
-                u.surname,
-                u.phone,
-                u.company,
-                u.job_title,
-                s.name as specialization,
-                p.name as profile,
-                ust.score,
-                ust.max_score,
-                ROUND((ust.score::float / ust.max_score::float * 100), 2) as percentage,
-                CASE
-                    WHEN (ust.score::float / ust.max_score::float * 100) >= 67 THEN 'Senior'
-                    WHEN (ust.score::float / ust.max_score::float * 100) >= 34 THEN 'Middle'
-                    ELSE 'Junior'
-                END as level,
-                ust.started_at,
-                ust.completed_at,
-                EXTRACT(EPOCH FROM (ust.completed_at - ust.started_at)) as duration_seconds
-            FROM user_specialization_tests ust
-            JOIN users u ON ust.user_id = u.id
-            JOIN specializations s ON ust.specialization_id = s.id
-            JOIN profiles p ON s.profile_id = p.id
-            WHERE ust.completed_at IS NOT NULL
-            AND u.department_id = $1
-        """
-
-        params = [department_id]
-        param_count = 2
-
-        if specialization_id:
-            query += f" AND ust.specialization_id = ${param_count}"
-            params.append(specialization_id)
-            param_count += 1
-        elif specialization:
-            query += f" AND s.name = ${param_count}"
-            params.append(specialization)
-            param_count += 1
-
-        if level:
-            if level == 'Senior':
-                query += " AND (ust.score::float / ust.max_score::float * 100) >= 67"
-            elif level == 'Middle':
-                query += " AND (ust.score::float / ust.max_score::float * 100) >= 34 AND (ust.score::float / ust.max_score::float * 100) < 67"
-            elif level == 'Junior':
-                query += " AND (ust.score::float / ust.max_score::float * 100) < 34"
-
-        if date_from:
-            query += f" AND ust.completed_at >= ${param_count}"
-            params.append(date_from)
-            param_count += 1
-
-        if date_to:
-            query += f" AND ust.completed_at <= ${param_count}"
-            params.append(date_to)
-            param_count += 1
-
-        if search:
-            query += f" AND (LOWER(u.name) LIKE LOWER(${param_count}) OR LOWER(u.surname) LIKE LOWER(${param_count}) OR LOWER(u.phone) LIKE LOWER(${param_count}))"
-            params.append(f"%{search}%")
-            param_count += 1
-
-        query += " ORDER BY ust.completed_at DESC"
-
-        async with get_db_connection() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(query, tuple(params))
-                rows = await cur.fetchall()
-                columns = [desc[0] for desc in cur.description]
-
-                results = []
-                for row in rows:
-                    result = dict(zip(columns, row))
-                    if result['duration_seconds']:
-                        result['duration_minutes'] = round(result['duration_seconds'] / 60, 1)
-                    results.append(result)
-
-                return {"status": "success", "results": results, "count": len(results)}
     except HTTPException:
         raise
     except Exception as e:
@@ -1444,7 +1698,7 @@ async def get_manager_result_detail(test_id: int, manager: dict = Depends(get_cu
                     JOIN users u ON ust.user_id = u.id
                     JOIN specializations s ON ust.specialization_id = s.id
                     JOIN profiles p ON s.profile_id = p.id
-                    WHERE ust.id = $1
+                    WHERE ust.id = %s
                 """, (test_id,))
                 test_info = await cur.fetchone()
 
@@ -1470,7 +1724,7 @@ async def get_manager_result_detail(test_id: int, manager: dict = Depends(get_cu
                     JOIN questions q ON ta.question_id = q.id
                     JOIN topics t ON q.topic_id = t.id
                     JOIN competencies c ON t.competency_id = c.id
-                    WHERE ta.user_test_id = $1
+                    WHERE ta.user_test_id = %s
                     ORDER BY c.id, t.id, q.level
                 """, (test_id,))
                 answers = await cur.fetchall()
@@ -1479,7 +1733,7 @@ async def get_manager_result_detail(test_id: int, manager: dict = Depends(get_cu
                 await cur.execute("""
                     SELECT recommendation_text, created_at
                     FROM ai_recommendations
-                    WHERE user_test_id = $1
+                    WHERE user_test_id = %s
                 """, (test_id,))
                 ai_rec = await cur.fetchone()
 
@@ -1521,81 +1775,225 @@ async def get_manager_result_detail(test_id: int, manager: dict = Depends(get_cu
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/manager/results/stats")
-async def get_manager_results_stats(manager: dict = Depends(get_current_manager)):
-    """Get statistical analysis for manager's department only"""
+# =====================================================
+# API - EMPLOYEE RATINGS (Manager & HR access)
+# =====================================================
+
+class EmployeeRatingSubmit(BaseModel):
+    employee_id: int
+    rating: int
+    comment: Optional[str] = None
+
+class CompetencyRatingSubmit(BaseModel):
+    user_test_id: int
+    competency_ratings: dict  # {competency_id: rating}
+
+@app.get("/api/manager/employees")
+async def get_manager_employees(manager: dict = Depends(get_current_manager)):
+    """Get list of employees in manager's department"""
     department_id = manager.get("department_id")
+    manager_id = manager.get("user_id")
 
     try:
         async with get_db_connection() as conn:
             async with conn.cursor() as cur:
-                # Overall stats for department
                 await cur.execute("""
                     SELECT
-                        COUNT(*) as total_tests,
-                        AVG(ust.score::float / ust.max_score::float * 100) as avg_percentage,
-                        MIN(ust.score::float / ust.max_score::float * 100) as min_percentage,
-                        MAX(ust.score::float / ust.max_score::float * 100) as max_percentage,
-                        AVG(EXTRACT(EPOCH FROM (ust.completed_at - ust.started_at)) / 60) as avg_duration_minutes
-                    FROM user_specialization_tests ust
-                    JOIN users u ON ust.user_id = u.id
-                    WHERE ust.completed_at IS NOT NULL
-                    AND u.department_id = $1
-                """, (department_id,))
-                overall = await cur.fetchone()
-
-                # By specialization (department only)
-                await cur.execute("""
-                    SELECT
-                        s.name,
-                        COUNT(*) as count,
-                        AVG(ust.score::float / ust.max_score::float * 100) as avg_percentage
-                    FROM user_specialization_tests ust
-                    JOIN users u ON ust.user_id = u.id
-                    JOIN specializations s ON ust.specialization_id = s.id
-                    WHERE ust.completed_at IS NOT NULL
-                    AND u.department_id = $1
-                    GROUP BY s.name
-                    ORDER BY count DESC
-                """, (department_id,))
-                by_spec = await cur.fetchall()
-
-                # By level (department only)
-                await cur.execute("""
-                    SELECT
-                        CASE
-                            WHEN (ust.score::float / ust.max_score::float * 100) >= 67 THEN 'Senior'
-                            WHEN (ust.score::float / ust.max_score::float * 100) >= 34 THEN 'Middle'
-                            ELSE 'Junior'
-                        END as level,
-                        COUNT(*) as count
-                    FROM user_specialization_tests ust
-                    JOIN users u ON ust.user_id = u.id
-                    WHERE ust.completed_at IS NOT NULL
-                    AND u.department_id = $1
-                    GROUP BY level
-                """, (department_id,))
-                by_level = await cur.fetchall()
+                        u.id,
+                        u.name,
+                        u.surname,
+                        u.phone,
+                        u.job_title,
+                        u.company,
+                        d.name as department_name
+                    FROM users u
+                    LEFT JOIN departments d ON u.department_id = d.id
+                    WHERE u.department_id = %s
+                    AND u.role = 'employee'
+                    AND u.id != %s
+                    ORDER BY u.surname, u.name
+                """, (department_id, manager_id))
+                employees = await cur.fetchall()
 
                 return {
                     "status": "success",
-                    "overall": {
-                        "total_tests": overall[0],
-                        "avg_percentage": round(overall[1], 2) if overall[1] else 0,
-                        "min_percentage": round(overall[2], 2) if overall[2] else 0,
-                        "max_percentage": round(overall[3], 2) if overall[3] else 0,
-                        "avg_duration_minutes": round(overall[4], 1) if overall[4] else 0
-                    },
-                    "by_specialization": [
-                        {"name": row[0], "count": row[1], "avg_percentage": round(row[2], 2)}
-                        for row in by_spec
-                    ],
-                    "by_level": {row[0]: row[1] for row in by_level}
+                    "employees": [
+                        {
+                            "id": emp[0],
+                            "name": emp[1],
+                            "surname": emp[2],
+                            "phone": emp[3],
+                            "job_title": emp[4],
+                            "company": emp[5],
+                            "department": emp[6]
+                        } for emp in employees
+                    ]
                 }
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/manager/ratings")
+async def get_manager_ratings(manager: dict = Depends(get_current_manager)):
+    """DEPRECATED: Old API - Use /api/manager/employee-tests instead
+
+    Returns empty data for backward compatibility"""
+    return {
+        "status": "success",
+        "ratings": [],
+        "message": "This API is deprecated. Use competency-based ratings instead."
+    }
+
+@app.post("/api/manager/rating")
+async def submit_employee_rating(data: EmployeeRatingSubmit, manager: dict = Depends(get_current_manager)):
+    """DEPRECATED: Old API - Use /api/manager/competency-ratings instead
+
+    Returns success for backward compatibility but doesn't save data"""
+    raise HTTPException(
+        status_code=410,
+        detail="This API is deprecated. Please use the new competency-based rating system at /api/manager/competency-ratings"
+    )
+
+# =====================================================
+# API - COMPETENCY-BASED RATINGS (New HR Requirements)
+# =====================================================
+
+@app.get("/api/manager/employee-tests/{employee_id}")
+async def get_employee_completed_tests(employee_id: int, manager: dict = Depends(get_current_manager)):
+    """Get completed tests for an employee to rate by competency"""
+    department_id = manager.get("department_id")
+    manager_id = manager.get("user_id")
+
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Verify employee is in manager's department
+                await cur.execute("""
+                    SELECT department_id FROM users WHERE id = %s
+                """, (employee_id,))
+                emp = await cur.fetchone()
+
+                if not emp or emp[0] != department_id:
+                    raise HTTPException(status_code=403, detail="Employee not in your department")
+
+                # Get completed tests with competencies and self-assessments
+                await cur.execute("""
+                    SELECT
+                        ust.id as test_id,
+                        ust.specialization,
+                        ust.profile,
+                        ust.completed_at,
+                        ust.score,
+                        ust.max_score,
+                        c.id as competency_id,
+                        c.name as competency_name,
+                        csa.self_rating,
+                        mcr.rating as manager_rating
+                    FROM user_specialization_tests ust
+                    JOIN competencies c ON c.specialization_id = ust.specialization_id
+                    LEFT JOIN competency_self_assessments csa ON csa.user_test_id = ust.id AND csa.competency_id = c.id
+                    LEFT JOIN manager_competency_ratings mcr ON mcr.user_test_id = ust.id AND mcr.competency_id = c.id AND mcr.manager_id = %s
+                    WHERE ust.user_id = %s AND ust.status = 'completed'
+                    ORDER BY ust.completed_at DESC, c.name
+                """, (manager_id, employee_id))
+
+                rows = await cur.fetchall()
+
+                # Group by test
+                tests = {}
+                for row in rows:
+                    test_id = row[0]
+                    if test_id not in tests:
+                        tests[test_id] = {
+                            "test_id": test_id,
+                            "specialization": row[1],
+                            "profile": row[2],
+                            "completed_at": row[3].isoformat() if row[3] else None,
+                            "score": row[4],
+                            "max_score": row[5],
+                            "competencies": []
+                        }
+
+                    tests[test_id]["competencies"].append({
+                        "competency_id": row[6],
+                        "competency_name": row[7],
+                        "self_rating": row[8],
+                        "manager_rating": row[9]
+                    })
+
+                return {
+                    "status": "success",
+                    "employee_id": employee_id,
+                    "tests": list(tests.values())
+                }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/manager/competency-ratings")
+async def submit_competency_ratings(data: CompetencyRatingSubmit, manager: dict = Depends(get_current_manager)):
+    """Submit or update competency-based ratings for an employee's test"""
+    manager_id = manager.get("user_id")
+    department_id = manager.get("department_id")
+
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Verify test belongs to employee in manager's department
+                await cur.execute("""
+                    SELECT u.department_id, u.id as employee_id
+                    FROM user_specialization_tests ust
+                    JOIN users u ON ust.user_id = u.id
+                    WHERE ust.id = %s
+                """, (data.user_test_id,))
+
+                test_info = await cur.fetchone()
+                if not test_info:
+                    raise HTTPException(status_code=404, detail="Test not found")
+
+                if test_info[0] != department_id:
+                    raise HTTPException(status_code=403, detail="Employee not in your department")
+
+                employee_id = test_info[1]
+
+                # Insert or update ratings for each competency
+                for competency_id, rating in data.competency_ratings.items():
+                    if not (1 <= rating <= 10):
+                        raise HTTPException(status_code=400, detail=f"Rating must be between 1 and 10, got {rating}")
+
+                    await cur.execute("""
+                        INSERT INTO manager_competency_ratings
+                            (employee_id, manager_id, user_test_id, competency_id, rating)
+                        VALUES (%s, %s, %s, %s, %s)
+                        ON CONFLICT (user_test_id, competency_id, manager_id)
+                        DO UPDATE SET
+                            rating = EXCLUDED.rating,
+                            updated_at = CURRENT_TIMESTAMP
+                    """, (employee_id, manager_id, data.user_test_id, int(competency_id), rating))
+
+                return {
+                    "status": "success",
+                    "message": "Competency ratings saved successfully"
+                }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/hr/ratings")
+async def get_all_ratings(hr_user: dict = Depends(verify_hr_cookie)):
+    """DEPRECATED: Old API - Use HR results panel instead
+
+    Returns empty data for backward compatibility"""
+    return {
+        "status": "success",
+        "ratings": [],
+        "message": "This API is deprecated. Use the new competency-based rating system."
+    }
 
 # =====================================================
 # API - МОНИТОРИНГ
@@ -1719,6 +2117,173 @@ async def get_operations_stats():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# =====================================================
+# DATABASE MIGRATION ENDPOINT (ONE-TIME SETUP)
+# =====================================================
+@app.get("/api/setup-self-assessment-table")
+async def setup_self_assessment_table():
+    """
+    ONE-TIME SETUP: Create competency_self_assessments table
+    Visit this URL once to create the table: /api/setup-self-assessment-table
+    """
+    try:
+        migration_sql = """
+        -- Create table for competency self-assessments
+        CREATE TABLE IF NOT EXISTS competency_self_assessments (
+            id SERIAL PRIMARY KEY,
+            user_test_id INTEGER NOT NULL REFERENCES user_specialization_tests(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            competency_id INTEGER NOT NULL REFERENCES competencies(id) ON DELETE CASCADE,
+            self_rating INTEGER NOT NULL CHECK (self_rating >= 1 AND self_rating <= 10),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_test_id, competency_id)
+        );
+
+        -- Indexes for performance
+        CREATE INDEX IF NOT EXISTS idx_self_assessments_user_test ON competency_self_assessments(user_test_id);
+        CREATE INDEX IF NOT EXISTS idx_self_assessments_user ON competency_self_assessments(user_id);
+        CREATE INDEX IF NOT EXISTS idx_self_assessments_competency ON competency_self_assessments(competency_id);
+        """
+
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Execute the migration
+                await cur.execute(migration_sql)
+                await conn.commit()
+
+                # Verify table was created
+                await cur.execute("""
+                    SELECT table_name
+                    FROM information_schema.tables
+                    WHERE table_name = 'competency_self_assessments'
+                """)
+                table_exists = await cur.fetchone()
+
+                if table_exists:
+                    return {
+                        "status": "success",
+                        "message": "✅ Table 'competency_self_assessments' created successfully!",
+                        "table_name": table_exists[0],
+                        "next_step": "You can now use the self-assessment feature. Complete a test to try it!"
+                    }
+                else:
+                    return {
+                        "status": "error",
+                        "message": "Table creation command executed but table not found. Check database permissions."
+                    }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to create table: {str(e)}",
+            "error_type": type(e).__name__
+        }
+
+@app.get("/api/setup-hr-requirements")
+async def setup_hr_requirements():
+    """
+    COMPREHENSIVE SETUP: Implement all HR requirements
+    - Competency-based manager evaluations
+    - Test time limits
+    - Weighted score calculation
+
+    Visit this URL once to update the database: /api/setup-hr-requirements
+    """
+    try:
+        migration_steps = []
+
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Step 1: Create self-assessment table if not exists
+                migration_steps.append("Creating competency_self_assessments table...")
+                await cur.execute("""
+                    CREATE TABLE IF NOT EXISTS competency_self_assessments (
+                        id SERIAL PRIMARY KEY,
+                        user_test_id INTEGER NOT NULL REFERENCES user_specialization_tests(id) ON DELETE CASCADE,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        competency_id INTEGER NOT NULL REFERENCES competencies(id) ON DELETE CASCADE,
+                        self_rating INTEGER NOT NULL CHECK (self_rating >= 1 AND self_rating <= 10),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(user_test_id, competency_id)
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_self_assessments_user_test ON competency_self_assessments(user_test_id);
+                    CREATE INDEX IF NOT EXISTS idx_self_assessments_user ON competency_self_assessments(user_id);
+                    CREATE INDEX IF NOT EXISTS idx_self_assessments_competency ON competency_self_assessments(competency_id);
+                """)
+
+                # Step 2: Drop old employee_ratings and create new manager_competency_ratings
+                migration_steps.append("Updating manager rating system to competency-based...")
+                await cur.execute("""
+                    DROP TABLE IF EXISTS employee_ratings CASCADE;
+
+                    CREATE TABLE IF NOT EXISTS manager_competency_ratings (
+                        id SERIAL PRIMARY KEY,
+                        employee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        manager_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        user_test_id INTEGER NOT NULL REFERENCES user_specialization_tests(id) ON DELETE CASCADE,
+                        competency_id INTEGER NOT NULL REFERENCES competencies(id) ON DELETE CASCADE,
+                        rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 10),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(user_test_id, competency_id, manager_id)
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_manager_comp_ratings_employee ON manager_competency_ratings(employee_id);
+                    CREATE INDEX IF NOT EXISTS idx_manager_comp_ratings_manager ON manager_competency_ratings(manager_id);
+                    CREATE INDEX IF NOT EXISTS idx_manager_comp_ratings_test ON manager_competency_ratings(user_test_id);
+                    CREATE INDEX IF NOT EXISTS idx_manager_comp_ratings_competency ON manager_competency_ratings(competency_id);
+                """)
+
+                # Step 3: Add time limit columns to tests
+                migration_steps.append("Adding test time limit tracking...")
+                await cur.execute("""
+                    ALTER TABLE user_specialization_tests
+                    ADD COLUMN IF NOT EXISTS time_limit_minutes INTEGER DEFAULT 40,
+                    ADD COLUMN IF NOT EXISTS time_started_at TIMESTAMP,
+                    ADD COLUMN IF NOT EXISTS time_expired BOOLEAN DEFAULT FALSE;
+
+                    UPDATE user_specialization_tests
+                    SET time_started_at = started_at
+                    WHERE time_started_at IS NULL AND started_at IS NOT NULL;
+                """)
+
+                await conn.commit()
+
+                # Verify all tables exist
+                await cur.execute("""
+                    SELECT table_name
+                    FROM information_schema.tables
+                    WHERE table_name IN ('competency_self_assessments', 'manager_competency_ratings')
+                    ORDER BY table_name
+                """)
+                tables = await cur.fetchall()
+
+                return {
+                    "status": "success",
+                    "message": "✅ All HR requirements implemented successfully!",
+                    "migration_steps": migration_steps,
+                    "tables_created": [t[0] for t in tables],
+                    "changes": [
+                        "✓ Self-assessment system ready",
+                        "✓ Manager competency-based evaluations ready",
+                        "✓ 40-minute test time limit added",
+                        "✓ Weighted score calculation ready (Test 50%, Manager 40%, Self 10%)"
+                    ],
+                    "next_steps": [
+                        "1. Complete a test to try self-assessment",
+                        "2. Managers can now rate by competency (not just overall rating)",
+                        "3. Final weighted scores will appear in results panels"
+                    ]
+                }
+
+    except Exception as e:
+        import traceback
+        return {
+            "status": "error",
+            "message": f"Migration failed: {str(e)}",
+            "error_type": type(e).__name__,
+            "traceback": traceback.format_exc()
+        }
 
 # =====================================================
 # RUN

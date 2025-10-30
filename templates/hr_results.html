@@ -186,9 +186,6 @@
 
         .results-table thead {
             background: #f8f9fa;
-            position: sticky;
-            top: 70px;
-            z-index: 10;
         }
 
         .results-table th {
@@ -199,6 +196,7 @@
             border-bottom: 2px solid #e0e0e0;
             font-size: 13px;
             text-transform: uppercase;
+            background: #f8f9fa;
         }
 
         .results-table td {
@@ -464,7 +462,6 @@
         <div class="header-actions">
             <button class="btn btn-primary" onclick="exportToCSV()">📥 Экспорт CSV</button>
             <a href="/hr/menu" class="btn btn-secondary">◀ Назад</a>
-            <button class="btn btn-danger" onclick="logout()">Выйти</button>
         </div>
     </div>
 
@@ -560,6 +557,7 @@
                             <th>Балл</th>
                             <th>%</th>
                             <th>Уровень</th>
+                            <th>Самооценка</th>
                             <th>Время</th>
                             <th>Дата</th>
                             <th>Действия</th>
@@ -567,7 +565,7 @@
                     </thead>
                     <tbody id="resultsBody">
                         <tr>
-                            <td colspan="12" class="loader">Загрузка...</td>
+                            <td colspan="13" class="loader">Загрузка...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -653,7 +651,7 @@
             if (results.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="12" class="empty-state">
+                        <td colspan="13" class="empty-state">
                             <div class="empty-state-icon">📭</div>
                             <div class="empty-state-text">Нет результатов</div>
                         </td>
@@ -671,6 +669,18 @@
                     minute: '2-digit'
                 });
 
+                // Render self-assessment
+                let selfAssessmentHtml = '-';
+                if (result.self_assessments && result.self_assessments.length > 0) {
+                    const avgSelfRating = (result.self_assessments.reduce((sum, sa) => sum + sa.self_rating, 0) / result.self_assessments.length).toFixed(1);
+                    const details = result.self_assessments.map(sa =>
+                        `${sa.competency_name}: ${sa.self_rating}/10`
+                    ).join('&#10;');
+                    const ratingClass = avgSelfRating >= 8 ? 'level-senior' :
+                                       avgSelfRating >= 5 ? 'level-middle' : 'level-junior';
+                    selfAssessmentHtml = `<span class="level-badge ${ratingClass}" title="${details}" style="cursor: help;">📝 ${avgSelfRating}/10</span>`;
+                }
+
                 return `
                     <tr>
                         <td>${result.test_id}</td>
@@ -682,6 +692,7 @@
                         <td class="score-display">${result.score}/${result.max_score}</td>
                         <td><strong>${result.percentage}%</strong></td>
                         <td><span class="level-badge level-${result.level.toLowerCase()}">${result.level}</span></td>
+                        <td>${selfAssessmentHtml}</td>
                         <td>${result.duration_minutes ? result.duration_minutes + ' мин' : '-'}</td>
                         <td>${completedDate}</td>
                         <td><button class="action-btn" onclick="viewDetail(${result.test_id})">Детали</button></td>
@@ -897,14 +908,6 @@
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-        }
-
-        async function logout() {
-            await fetch('/api/hr/logout', {
-                method: 'POST',
-                credentials: 'include'
-            });
-            window.location.href = '/hr';
         }
 
         // Close modal on outside click

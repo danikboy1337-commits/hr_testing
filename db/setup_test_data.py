@@ -49,9 +49,9 @@ async def check_and_setup_test_data():
                         ("HR", "Manager", "+77001111111", "Халык банк", "HR Manager", "hr", 7),
                         ("HR", "Specialist", "+77001111112", "Халык банк", "HR Specialist", "hr", 7),
                         # Managers
-                        ("Бекенд", "Менеджер", "+77002222221", "Халык банк", "Backend Team Lead", "manager", 1),
-                        ("Фронтенд", "Менеджер", "+77002222222", "Халык банк", "Frontend Team Lead", "manager", 2),
-                        ("Мобайл", "Менеджер", "+77002222223", "Халык банк", "Mobile Team Lead", "manager", 3),
+                        ("Бекенд", "Руководитель", "+77002222221", "Халык банк", "Backend Team Lead", "manager", 1),
+                        ("Фронтенд", "Руководитель", "+77002222222", "Халык банк", "Frontend Team Lead", "manager", 2),
+                        ("Мобайл", "Руководитель", "+77002222223", "Халык банк", "Mobile Team Lead", "manager", 3),
                         # Employees
                         ("Алексей", "Иванов", "+77003333331", "Халык банк", "Python Developer", "employee", 1),
                         ("Дмитрий", "Петров", "+77003333332", "Халык банк", "Java Developer", "employee", 1),
