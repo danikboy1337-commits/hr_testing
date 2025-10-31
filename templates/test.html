@@ -581,6 +581,9 @@
                 }
             }
 
+            // 🖥️ ENTER FULLSCREEN MODE
+            await enterFullscreen();
+
             // Run face detection every 2 seconds
             proctoringInterval = setInterval(async () => {
                 if (!proctoringEnabled) return;
@@ -594,7 +597,7 @@
             // Context menu detection (right-click)
             document.addEventListener('contextmenu', handleContextMenu);
 
-            console.log('✅ AI proctoring active');
+            console.log('✅ AI proctoring active with fullscreen enforcement');
         }
 
         // Stop AI proctoring
@@ -611,7 +614,12 @@
             window.removeEventListener('blur', handleWindowBlur);
             document.removeEventListener('contextmenu', handleContextMenu);
 
-            console.log('✅ AI proctoring stopped');
+            // 🖥️ EXIT FULLSCREEN MODE
+            if (fullscreenEnabled) {
+                exitFullscreen();
+            }
+
+            console.log('✅ AI proctoring stopped and fullscreen exited');
         }
 
         // Detect faces in video stream
@@ -782,6 +790,235 @@
                 console.error('Error logging proctoring event:', error);
             }
         }
+
+        // =====================================================
+        // FULLSCREEN MODE & KEYBOARD BLOCKING
+        // =====================================================
+        let fullscreenEnabled = false;
+        let fullscreenExitAttempts = 0;
+
+        // Enter fullscreen mode
+        async function enterFullscreen() {
+            console.log('🖥️ Entering fullscreen mode...');
+            const elem = document.documentElement;
+
+            try {
+                if (elem.requestFullscreen) {
+                    await elem.requestFullscreen();
+                } else if (elem.webkitRequestFullscreen) { // Safari
+                    await elem.webkitRequestFullscreen();
+                } else if (elem.msRequestFullscreen) { // IE11
+                    await elem.msRequestFullscreen();
+                }
+
+                fullscreenEnabled = true;
+                console.log('✅ Fullscreen activated');
+            } catch (error) {
+                console.error('❌ Fullscreen request failed:', error);
+                alert('⚠️ Внимание! Для прохождения теста необходим полноэкранный режим. Разрешите полноэкранный режим в браузере.');
+            }
+        }
+
+        // Exit fullscreen mode
+        function exitFullscreen() {
+            console.log('🖥️ Exiting fullscreen mode...');
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            } else if (document.webkitExitFullscreen) {
+                document.webkitExitFullscreen();
+            } else if (document.msExitFullscreen) {
+                document.msExitFullscreen();
+            }
+            fullscreenEnabled = false;
+        }
+
+        // Monitor fullscreen changes
+        function handleFullscreenChange() {
+            const isFullscreen = !!(document.fullscreenElement ||
+                                   document.webkitFullscreenElement ||
+                                   document.msFullscreenElement);
+
+            if (!isFullscreen && fullscreenEnabled && proctoringEnabled) {
+                // User exited fullscreen during test
+                fullscreenExitAttempts++;
+                console.warn('⚠️ Fullscreen exit detected, attempt:', fullscreenExitAttempts);
+
+                logProctoringEvent('fullscreen_exit', 'critical', {
+                    attempts: fullscreenExitAttempts,
+                    message: 'User exited fullscreen mode during test'
+                });
+
+                // Force back to fullscreen after brief delay
+                setTimeout(() => {
+                    if (proctoringEnabled) {
+                        alert('⚠️ Тест должен проходить в полноэкранном режиме! Возврат в полноэкранный режим...');
+                        enterFullscreen();
+                    }
+                }, 1000);
+            }
+        }
+
+        // Block dangerous keyboard shortcuts
+        function blockKeyboardShortcuts(e) {
+            if (!proctoringEnabled) return;
+
+            const key = e.key;
+            const ctrl = e.ctrlKey;
+            const alt = e.altKey;
+            const shift = e.shiftKey;
+            const meta = e.metaKey; // Command on Mac
+
+            // Block F11 (fullscreen toggle)
+            if (key === 'F11') {
+                e.preventDefault();
+                console.warn('⚠️ F11 blocked');
+                return false;
+            }
+
+            // Block F12 (DevTools)
+            if (key === 'F12') {
+                e.preventDefault();
+                console.warn('⚠️ F12 (DevTools) blocked');
+                logProctoringEvent('devtools_attempt', 'high', {
+                    message: 'Attempted to open DevTools'
+                });
+                return false;
+            }
+
+            // Block Ctrl+W / Cmd+W (close tab)
+            if ((ctrl || meta) && key === 'w') {
+                e.preventDefault();
+                console.warn('⚠️ Close tab blocked');
+                return false;
+            }
+
+            // Block Ctrl+T / Cmd+T (new tab)
+            if ((ctrl || meta) && key === 't') {
+                e.preventDefault();
+                console.warn('⚠️ New tab blocked');
+                return false;
+            }
+
+            // Block Ctrl+N / Cmd+N (new window)
+            if ((ctrl || meta) && key === 'n') {
+                e.preventDefault();
+                console.warn('⚠️ New window blocked');
+                return false;
+            }
+
+            // Block Ctrl+Shift+N / Cmd+Shift+N (incognito)
+            if ((ctrl || meta) && shift && key === 'N') {
+                e.preventDefault();
+                console.warn('⚠️ Incognito mode blocked');
+                return false;
+            }
+
+            // Block Alt+Tab (window switching) - detected but can't fully prevent
+            if (alt && key === 'Tab') {
+                e.preventDefault();
+                console.warn('⚠️ Alt+Tab detected');
+                logProctoringEvent('alt_tab_attempt', 'medium', {
+                    message: 'Attempted to switch windows'
+                });
+                return false;
+            }
+
+            // Block Ctrl+Shift+I / Cmd+Opt+I (DevTools)
+            if ((ctrl && shift && key === 'I') || (meta && alt && key === 'i')) {
+                e.preventDefault();
+                console.warn('⚠️ DevTools shortcut blocked');
+                logProctoringEvent('devtools_attempt', 'high', {
+                    message: 'Attempted to open DevTools via shortcut'
+                });
+                return false;
+            }
+
+            // Block Ctrl+Shift+J / Cmd+Opt+J (Console)
+            if ((ctrl && shift && key === 'J') || (meta && alt && key === 'j')) {
+                e.preventDefault();
+                console.warn('⚠️ Console shortcut blocked');
+                return false;
+            }
+
+            // Block Ctrl+Shift+C / Cmd+Opt+C (Inspect element)
+            if ((ctrl && shift && key === 'C') || (meta && alt && key === 'c')) {
+                e.preventDefault();
+                console.warn('⚠️ Inspect element blocked');
+                return false;
+            }
+
+            // Block Ctrl+U / Cmd+U (view source)
+            if ((ctrl || meta) && key === 'u') {
+                e.preventDefault();
+                console.warn('⚠️ View source blocked');
+                return false;
+            }
+
+            // Block Escape (exit fullscreen)
+            if (key === 'Escape') {
+                e.preventDefault();
+                console.warn('⚠️ Escape blocked');
+                return false;
+            }
+
+            // Block browser back/forward
+            if (alt && (key === 'ArrowLeft' || key === 'ArrowRight')) {
+                e.preventDefault();
+                console.warn('⚠️ Browser navigation blocked');
+                return false;
+            }
+
+            // Block refresh (F5, Ctrl+R, Cmd+R)
+            if (key === 'F5' || ((ctrl || meta) && key === 'r')) {
+                e.preventDefault();
+                console.warn('⚠️ Page refresh blocked');
+                alert('⚠️ Обновление страницы заблокировано во время теста');
+                return false;
+            }
+        }
+
+        // Prevent page unload/navigation
+        function preventPageUnload(e) {
+            if (!proctoringEnabled) return;
+
+            e.preventDefault();
+            e.returnValue = ''; // Chrome requires returnValue to be set
+            return 'Вы уверены, что хотите покинуть страницу? Прогресс теста будет потерян.';
+        }
+
+        // Setup fullscreen and keyboard blocking
+        function setupFullscreenMode() {
+            // Listen for fullscreen changes
+            document.addEventListener('fullscreenchange', handleFullscreenChange);
+            document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+            document.addEventListener('msfullscreenchange', handleFullscreenChange);
+
+            // Block keyboard shortcuts
+            document.addEventListener('keydown', blockKeyboardShortcuts, true);
+
+            // Prevent page unload
+            window.addEventListener('beforeunload', preventPageUnload);
+
+            console.log('✅ Fullscreen mode and keyboard blocking configured');
+        }
+
+        // Cleanup fullscreen and keyboard blocking
+        function cleanupFullscreenMode() {
+            document.removeEventListener('fullscreenchange', handleFullscreenChange);
+            document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+            document.removeEventListener('msfullscreenchange', handleFullscreenChange);
+            document.removeEventListener('keydown', blockKeyboardShortcuts, true);
+            window.removeEventListener('beforeunload', preventPageUnload);
+
+            if (fullscreenEnabled) {
+                exitFullscreen();
+            }
+
+            console.log('✅ Fullscreen mode and keyboard blocking cleaned up');
+        }
+
+        // Initialize on page load
+        setupFullscreenMode();
 
         // =====================================================
         // REACT APP

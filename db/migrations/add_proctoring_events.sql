@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS proctoring_events (
     -- 'copy_attempt' - Attempted to copy text
     -- 'paste_attempt' - Attempted to paste text
     -- 'context_menu' - Right-click detected
+    -- 'devtools_attempt' - Attempted to open DevTools
+    -- 'alt_tab_attempt' - Attempted to switch windows with Alt+Tab
     severity VARCHAR(20) NOT NULL DEFAULT 'medium',
     -- Severity levels: 'low', 'medium', 'high', 'critical'
     details JSONB,

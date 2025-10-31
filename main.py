@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 import sys
 import os
+import json
 
 # Мониторинг
 import psutil
@@ -1057,17 +1058,22 @@ async def log_proctoring_event(
                     raise HTTPException(status_code=403, detail="Access denied")
 
                 # Insert proctoring event
+                # Convert details dict to JSON string for JSONB column
+                details_json = None
+                if event.details is not None:
+                    details_json = json.dumps(event.details)
+
                 await cur.execute("""
                     INSERT INTO proctoring_events
                     (user_test_id, user_id, event_type, severity, details)
-                    VALUES (%s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s::jsonb)
                     RETURNING id
                 """, (
                     event.user_test_id,
                     user_id,
                     event.event_type,
                     event.severity,
-                    None if event.details is None else str(event.details)
+                    details_json
                 ))
 
                 event_id = (await cur.fetchone())[0]
