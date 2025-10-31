@@ -12,10 +12,11 @@ CREATE TABLE IF NOT EXISTS proctoring_events (
     -- 'looking_away' - Eye gaze not on screen
     -- 'tab_switched' - User switched browser tab
     -- 'window_blur' - Browser window lost focus
-    -- 'fullscreen_exit' - User exited fullscreen mode
     -- 'copy_attempt' - Attempted to copy text
     -- 'paste_attempt' - Attempted to paste text
     -- 'context_menu' - Right-click detected
+    -- 'new_tab_blocked' - Attempted to open new tab with Ctrl+T
+    -- 'close_tab_blocked' - Attempted to close tab with Ctrl+W
     severity VARCHAR(20) NOT NULL DEFAULT 'medium',
     -- Severity levels: 'low', 'medium', 'high', 'critical'
     details JSONB,

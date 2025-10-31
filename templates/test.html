@@ -594,7 +594,7 @@
             // Context menu detection (right-click)
             document.addEventListener('contextmenu', handleContextMenu);
 
-            console.log('✅ AI proctoring active');
+            console.log('✅ AI proctoring active with keyboard blocking');
         }
 
         // Stop AI proctoring
@@ -784,6 +784,76 @@
         }
 
         // =====================================================
+        // CRITICAL KEYBOARD BLOCKING (Ctrl+T, Ctrl+W)
+        // =====================================================
+
+        // Block critical keyboard shortcuts - SIMPLIFIED VERSION
+        function blockCriticalShortcuts(e) {
+            if (!proctoringEnabled) return;
+
+            const key = e.key.toLowerCase();
+            const ctrl = e.ctrlKey;
+            const meta = e.metaKey; // Command key on Mac
+
+            // Block Ctrl+T / Cmd+T (new tab) - CRITICAL
+            if ((ctrl || meta) && key === 't') {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                console.warn('🚫 Blocked: Ctrl+T (new tab)');
+                logProctoringEvent('new_tab_blocked', 'high', {
+                    message: 'Attempted to open new tab with Ctrl+T'
+                });
+                return false;
+            }
+
+            // Block Ctrl+W / Cmd+W (close tab) - CRITICAL
+            if ((ctrl || meta) && key === 'w') {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                console.warn('🚫 Blocked: Ctrl+W (close tab)');
+                logProctoringEvent('close_tab_blocked', 'high', {
+                    message: 'Attempted to close tab with Ctrl+W'
+                });
+                return false;
+            }
+        }
+
+        // Prevent page unload/navigation
+        function preventPageUnload(e) {
+            if (!proctoringEnabled) return;
+
+            e.preventDefault();
+            e.returnValue = 'Вы уверены, что хотите покинуть страницу? Прогресс теста будет потерян.';
+            return e.returnValue;
+        }
+
+        // Setup keyboard blocking
+        function setupKeyboardBlocking() {
+            // Block critical shortcuts - use capture phase for highest priority
+            document.addEventListener('keydown', blockCriticalShortcuts, true);
+            window.addEventListener('keydown', blockCriticalShortcuts, true);
+
+            // Prevent page unload
+            window.addEventListener('beforeunload', preventPageUnload);
+
+            console.log('✅ Critical keyboard shortcuts blocking active (Ctrl+T, Ctrl+W)');
+        }
+
+        // Cleanup keyboard blocking
+        function cleanupKeyboardBlocking() {
+            document.removeEventListener('keydown', blockCriticalShortcuts, true);
+            window.removeEventListener('keydown', blockCriticalShortcuts, true);
+            window.removeEventListener('beforeunload', preventPageUnload);
+
+            console.log('✅ Keyboard blocking cleaned up');
+        }
+
+        // Initialize on page load
+        setupKeyboardBlocking();
+
+        // =====================================================
         // REACT APP
         // =====================================================
         function App() {
@@ -912,6 +982,7 @@
                     console.log('🛑 Test completed - stopping camera monitoring and AI proctoring');
                     stopCamera();
                     stopAIProctoring();
+                    cleanupKeyboardBlocking();
                 }
             }, [completed]);
 
