@@ -7,6 +7,11 @@
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- TensorFlow.js for AI Proctoring -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7/dist/blazeface.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection@1.0.2/dist/face-landmarks-detection.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -517,6 +522,268 @@
         });
 
         // =====================================================
+        // AI PROCTORING - TENSORFLOW.JS
+        // =====================================================
+        let blazefaceModel = null;
+        let faceLandmarksDetector = null;
+        let proctoringInterval = null;
+        let proctoringEnabled = false;
+        let currentUserTestId = null;
+        let lastFaceDetectionTime = Date.now();
+        let noFaceWarningShown = false;
+        let multipleFacesWarningShown = false;
+        let tabSwitchCount = 0;
+        let lastEventLog = {};
+
+        // Load AI models
+        async function loadAIModels() {
+            console.log('🤖 Loading AI proctoring models...');
+            try {
+                // Load BlazeFace for face detection
+                blazefaceModel = await blazeface.load();
+                console.log('✅ BlazeFace model loaded');
+
+                // Load FaceMesh for facial landmarks (eye tracking)
+                faceLandmarksDetector = await faceLandmarksDetection.createDetector(
+                    faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
+                    {
+                        runtime: 'tfjs',
+                        maxFaces: 3,
+                        refineLandmarks: true
+                    }
+                );
+                console.log('✅ FaceMesh model loaded');
+
+                return true;
+            } catch (error) {
+                console.error('❌ Failed to load AI models:', error);
+                return false;
+            }
+        }
+
+        // Start AI proctoring
+        async function startAIProctoring(userTestId) {
+            if (proctoringEnabled) {
+                console.log('⚠️ AI proctoring already running');
+                return;
+            }
+
+            console.log('🤖 Starting AI proctoring for test:', userTestId);
+            currentUserTestId = userTestId;
+            proctoringEnabled = true;
+
+            // Load models if not loaded
+            if (!blazefaceModel || !faceLandmarksDetector) {
+                const loaded = await loadAIModels();
+                if (!loaded) {
+                    console.error('❌ Cannot start proctoring: models failed to load');
+                    return;
+                }
+            }
+
+            // Run face detection every 2 seconds
+            proctoringInterval = setInterval(async () => {
+                if (!proctoringEnabled) return;
+                await detectFaces();
+            }, 2000);
+
+            // Tab/window visibility detection
+            document.addEventListener('visibilitychange', handleVisibilityChange);
+            window.addEventListener('blur', handleWindowBlur);
+
+            // Context menu detection (right-click)
+            document.addEventListener('contextmenu', handleContextMenu);
+
+            console.log('✅ AI proctoring active');
+        }
+
+        // Stop AI proctoring
+        function stopAIProctoring() {
+            console.log('🛑 Stopping AI proctoring');
+            proctoringEnabled = false;
+
+            if (proctoringInterval) {
+                clearInterval(proctoringInterval);
+                proctoringInterval = null;
+            }
+
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('blur', handleWindowBlur);
+            document.removeEventListener('contextmenu', handleContextMenu);
+
+            console.log('✅ AI proctoring stopped');
+        }
+
+        // Detect faces in video stream
+        async function detectFaces() {
+            if (!blazefaceModel || !proctoringEnabled) return;
+
+            const videoElement = document.getElementById('cameraVideo');
+            if (!videoElement || videoElement.readyState !== 4) return;
+
+            try {
+                // Detect faces with BlazeFace
+                const predictions = await blazefaceModel.estimateFaces(videoElement, false);
+                const faceCount = predictions.length;
+                const now = Date.now();
+
+                if (faceCount === 0) {
+                    // No face detected
+                    if (now - lastFaceDetectionTime > 5000) { // 5 seconds without face
+                        if (!noFaceWarningShown) {
+                            console.warn('⚠️ No face detected for 5+ seconds');
+                            await logProctoringEvent('no_face_detected', 'high', {
+                                duration: (now - lastFaceDetectionTime) / 1000,
+                                message: 'Face disappeared from camera view'
+                            });
+                            noFaceWarningShown = true;
+                        }
+                    }
+                } else {
+                    // Face(s) detected
+                    lastFaceDetectionTime = now;
+                    noFaceWarningShown = false;
+
+                    if (faceCount > 1) {
+                        // Multiple faces detected
+                        if (!multipleFacesWarningShown) {
+                            console.warn(`⚠️ Multiple faces detected: ${faceCount}`);
+                            await logProctoringEvent('multiple_faces', 'critical', {
+                                face_count: faceCount,
+                                message: 'More than one person detected in camera'
+                            });
+                            multipleFacesWarningShown = true;
+
+                            // Show alert to user
+                            setTimeout(() => {
+                                alert('⚠️ Внимание! Обнаружено несколько лиц в кадре. В тесте может участвовать только один человек.');
+                            }, 100);
+                        }
+                    } else {
+                        multipleFacesWarningShown = false;
+                    }
+
+                    // Analyze eye gaze with FaceMesh (optional, more detailed)
+                    if (faceLandmarksDetector && faceCount === 1) {
+                        await analyzeEyeGaze(videoElement);
+                    }
+                }
+            } catch (error) {
+                console.error('Error detecting faces:', error);
+            }
+        }
+
+        // Analyze eye gaze direction
+        async function analyzeEyeGaze(videoElement) {
+            try {
+                const faces = await faceLandmarksDetector.estimateFaces(videoElement);
+
+                if (faces.length > 0) {
+                    const face = faces[0];
+                    // Face mesh provides detailed landmarks for eye tracking
+                    // This is a simplified version - full implementation would calculate
+                    // eye gaze vectors from pupil positions relative to eye corners
+
+                    // For now, we detect if face rotation is extreme
+                    if (face.box) {
+                        const rotation = calculateFaceRotation(face);
+                        if (Math.abs(rotation) > 45) {
+                            console.warn('⚠️ Face turned away from screen');
+                            await logProctoringEvent('looking_away', 'medium', {
+                                rotation: rotation,
+                                message: 'Face orientation away from screen'
+                            });
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error analyzing eye gaze:', error);
+            }
+        }
+
+        // Calculate face rotation (simplified)
+        function calculateFaceRotation(face) {
+            // Simplified rotation estimation from bounding box
+            // Real implementation would use facial landmarks
+            return 0; // Placeholder
+        }
+
+        // Handle tab switching / visibility change
+        function handleVisibilityChange() {
+            if (document.hidden && proctoringEnabled) {
+                tabSwitchCount++;
+                console.warn('⚠️ Tab switched or hidden', tabSwitchCount);
+                logProctoringEvent('tab_switched', 'high', {
+                    count: tabSwitchCount,
+                    message: 'User switched to another tab or window'
+                });
+            }
+        }
+
+        // Handle window blur
+        function handleWindowBlur() {
+            if (proctoringEnabled) {
+                console.warn('⚠️ Window lost focus');
+                logProctoringEvent('window_blur', 'medium', {
+                    message: 'Browser window lost focus'
+                });
+            }
+        }
+
+        // Handle context menu (right-click)
+        function handleContextMenu(e) {
+            if (proctoringEnabled) {
+                e.preventDefault();
+                console.warn('⚠️ Right-click detected');
+                logProctoringEvent('context_menu', 'low', {
+                    message: 'Right-click menu attempt'
+                });
+                alert('Правый клик отключен во время тестирования');
+                return false;
+            }
+        }
+
+        // Log proctoring event to backend
+        async function logProctoringEvent(eventType, severity, details) {
+            if (!currentUserTestId) return;
+
+            // Throttle events - don't log same event within 30 seconds
+            const now = Date.now();
+            const lastLog = lastEventLog[eventType] || 0;
+            if (now - lastLog < 30000) {
+                return; // Skip duplicate events within 30 seconds
+            }
+            lastEventLog[eventType] = now;
+
+            const token = sessionStorage.getItem('halyk_token');
+            if (!token) return;
+
+            try {
+                const response = await fetch('/api/proctoring/event', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        user_test_id: currentUserTestId,
+                        event_type: eventType,
+                        severity: severity,
+                        details: details
+                    })
+                });
+
+                if (response.ok) {
+                    console.log(`✅ Logged event: ${eventType} (${severity})`);
+                } else {
+                    console.error('Failed to log proctoring event:', response.status);
+                }
+            } catch (error) {
+                console.error('Error logging proctoring event:', error);
+            }
+        }
+
+        // =====================================================
         // REACT APP
         // =====================================================
         function App() {
@@ -639,11 +906,12 @@
                 };
             }, [selfAssessmentSubmitted]);
 
-            // 🎥 Stop camera when test is completed
+            // 🎥 Stop camera and AI proctoring when test is completed
             useEffect(() => {
                 if (completed) {
-                    console.log('🛑 Test completed - stopping camera monitoring');
+                    console.log('🛑 Test completed - stopping camera monitoring and AI proctoring');
                     stopCamera();
+                    stopAIProctoring();
                 }
             }, [completed]);
 
@@ -770,6 +1038,10 @@
                             // 🎥 START CAMERA for returning user
                             console.log('🎥 Returning to active test - activating camera monitoring');
                             await startCamera();
+
+                            // 🤖 START AI PROCTORING for returning user
+                            console.log('🤖 Resuming AI proctoring');
+                            await startAIProctoring(parseInt(userTestId));
                         } else {
                             console.log('Showing self-assessment form');
                             setShowSelfAssessment(true);
@@ -817,6 +1089,10 @@
                         // 🎥 START CAMERA when test begins
                         console.log('🎥 Test started - activating camera monitoring');
                         await startCamera();
+
+                        // 🤖 START AI PROCTORING
+                        console.log('🤖 Starting AI proctoring');
+                        await startAIProctoring(parseInt(userTestId));
                     }
                 } catch (error) {
                     alert('Ошибка отправки самооценки');

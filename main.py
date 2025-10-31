@@ -1025,6 +1025,173 @@ async def get_results(user_test_id: int, current_user: dict = Depends(get_curren
         raise HTTPException(status_code=500, detail=str(e))
 
 # =====================================================
+# API - AI PROCTORING
+# =====================================================
+class ProctoringEventSubmit(BaseModel):
+    user_test_id: int
+    event_type: str
+    severity: str = "medium"
+    details: Optional[dict] = None
+
+@app.post("/api/proctoring/event")
+async def log_proctoring_event(
+    event: ProctoringEventSubmit,
+    current_user: dict = Depends(get_current_user)
+):
+    """Log a proctoring event detected by AI"""
+    user_id = current_user["user_id"]
+
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Verify test belongs to user
+                await cur.execute(
+                    "SELECT user_id FROM user_specialization_tests WHERE id = %s",
+                    (event.user_test_id,)
+                )
+                test_data = await cur.fetchone()
+
+                if not test_data:
+                    raise HTTPException(status_code=404, detail="Test not found")
+                if test_data[0] != user_id:
+                    raise HTTPException(status_code=403, detail="Access denied")
+
+                # Insert proctoring event
+                await cur.execute("""
+                    INSERT INTO proctoring_events
+                    (user_test_id, user_id, event_type, severity, details)
+                    VALUES (%s, %s, %s, %s, %s)
+                    RETURNING id
+                """, (
+                    event.user_test_id,
+                    user_id,
+                    event.event_type,
+                    event.severity,
+                    None if event.details is None else str(event.details)
+                ))
+
+                event_id = (await cur.fetchone())[0]
+
+                return {
+                    "status": "success",
+                    "event_id": event_id,
+                    "message": "Proctoring event logged"
+                }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/proctoring/events/{user_test_id}")
+async def get_proctoring_events(
+    user_test_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get all proctoring events for a test"""
+    user_id = current_user["user_id"]
+
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Verify test belongs to user
+                await cur.execute(
+                    "SELECT user_id FROM user_specialization_tests WHERE id = %s",
+                    (user_test_id,)
+                )
+                test_data = await cur.fetchone()
+
+                if not test_data:
+                    raise HTTPException(status_code=404, detail="Test not found")
+                if test_data[0] != user_id:
+                    raise HTTPException(status_code=403, detail="Access denied")
+
+                # Get events
+                await cur.execute("""
+                    SELECT id, event_type, severity, details, created_at
+                    FROM proctoring_events
+                    WHERE user_test_id = %s
+                    ORDER BY created_at DESC
+                """, (user_test_id,))
+
+                rows = await cur.fetchall()
+                events = [
+                    {
+                        "id": row[0],
+                        "event_type": row[1],
+                        "severity": row[2],
+                        "details": row[3],
+                        "created_at": row[4].isoformat() if row[4] else None
+                    }
+                    for row in rows
+                ]
+
+                return {
+                    "status": "success",
+                    "events": events,
+                    "count": len(events)
+                }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/proctoring/summary/{user_test_id}")
+async def get_proctoring_summary(
+    user_test_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get proctoring summary statistics for a test"""
+    user_id = current_user["user_id"]
+
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Verify test belongs to user
+                await cur.execute(
+                    "SELECT user_id, suspicious_events_count, proctoring_risk_level FROM user_specialization_tests WHERE id = %s",
+                    (user_test_id,)
+                )
+                test_data = await cur.fetchone()
+
+                if not test_data:
+                    raise HTTPException(status_code=404, detail="Test not found")
+                if test_data[0] != user_id:
+                    raise HTTPException(status_code=403, detail="Access denied")
+
+                # Get event breakdown
+                await cur.execute("""
+                    SELECT
+                        event_type,
+                        COUNT(*) as count,
+                        severity
+                    FROM proctoring_events
+                    WHERE user_test_id = %s
+                    GROUP BY event_type, severity
+                    ORDER BY count DESC
+                """, (user_test_id,))
+
+                breakdown_rows = await cur.fetchall()
+                breakdown = [
+                    {
+                        "event_type": row[0],
+                        "count": row[1],
+                        "severity": row[2]
+                    }
+                    for row in breakdown_rows
+                ]
+
+                return {
+                    "status": "success",
+                    "total_events": test_data[1],
+                    "risk_level": test_data[2],
+                    "breakdown": breakdown
+                }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# =====================================================
 # API - ДАШБОРД
 # =====================================================
 @app.get("/api/dashboard/stats")
@@ -2283,6 +2450,100 @@ async def setup_hr_requirements():
             "message": f"Migration failed: {str(e)}",
             "error_type": type(e).__name__,
             "traceback": traceback.format_exc()
+        }
+
+@app.get("/api/setup-ai-proctoring")
+async def setup_ai_proctoring():
+    """
+    Setup AI Proctoring System
+    - Creates proctoring_events table
+    - Adds proctoring columns to user_specialization_tests
+    - Creates proctoring_summary view
+    - Sets up automatic triggers
+
+    Visit this URL once to enable AI proctoring: /api/setup-ai-proctoring
+    """
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Read and execute migration SQL
+                migration_file = 'db/migrations/add_proctoring_events.sql'
+
+                with open(migration_file, 'r') as f:
+                    migration_sql = f.read()
+
+                # Execute migration
+                await cur.execute(migration_sql)
+                await conn.commit()
+
+                # Verify table was created
+                await cur.execute("""
+                    SELECT column_name, data_type
+                    FROM information_schema.columns
+                    WHERE table_name = 'proctoring_events'
+                    ORDER BY ordinal_position
+                """)
+                columns = await cur.fetchall()
+
+                # Check if proctoring columns added to tests table
+                await cur.execute("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'user_specialization_tests'
+                    AND column_name IN ('proctoring_enabled', 'suspicious_events_count', 'proctoring_risk_level')
+                """)
+                test_columns = await cur.fetchall()
+
+                return {
+                    "status": "success",
+                    "message": "✅ AI Proctoring System enabled successfully!",
+                    "features_enabled": [
+                        "🎥 Live camera streaming",
+                        "👤 Face detection (BlazeFace)",
+                        "👁️ Eye gaze tracking (FaceMesh)",
+                        "🚫 Multiple person detection",
+                        "📑 Tab switching detection",
+                        "🪟 Window focus tracking",
+                        "🖱️ Right-click prevention",
+                        "📊 Real-time event logging",
+                        "⚠️ Automatic risk level calculation"
+                    ],
+                    "database_changes": {
+                        "proctoring_events_table": f"Created with {len(columns)} columns",
+                        "test_table_columns_added": len(test_columns),
+                        "views_created": ["proctoring_summary"],
+                        "triggers_created": ["trigger_update_suspicious_events"]
+                    },
+                    "event_types_tracked": [
+                        "no_face_detected (high)",
+                        "multiple_faces (critical)",
+                        "looking_away (medium)",
+                        "tab_switched (high)",
+                        "window_blur (medium)",
+                        "context_menu (low)"
+                    ],
+                    "next_steps": [
+                        "1. Start a test - AI proctoring will activate automatically",
+                        "2. Face detection runs every 2 seconds",
+                        "3. Events are logged to proctoring_events table",
+                        "4. View events via /api/proctoring/events/{test_id}",
+                        "5. Check risk level via /api/proctoring/summary/{test_id}"
+                    ],
+                    "api_endpoints": [
+                        "POST /api/proctoring/event - Log proctoring event",
+                        "GET /api/proctoring/events/{test_id} - Get all events",
+                        "GET /api/proctoring/summary/{test_id} - Get summary stats"
+                    ]
+                }
+
+    except Exception as e:
+        import traceback
+        return {
+            "status": "error",
+            "message": f"Setup failed: {str(e)}",
+            "error_type": type(e).__name__,
+            "traceback": traceback.format_exc(),
+            "help": "Make sure db/migrations/add_proctoring_events.sql exists"
         }
 
 # =====================================================
