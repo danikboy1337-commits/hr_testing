@@ -36,9 +36,72 @@
             border: 2px solid #e53e3e;
         }
 
+        .camera-feed {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 320px;
+            height: 240px;
+            border-radius: 16px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+            z-index: 1001;
+            overflow: hidden;
+            border: 4px solid #e53e3e;
+            background: #000;
+            display: none;
+        }
+
+        .camera-feed.active {
+            display: block;
+        }
+
+        .camera-feed video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* Mirror effect */
+        }
+
+        .camera-status {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .camera-error {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #ffe0e0;
+            color: #c41e3a;
+            padding: 15px 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 1002;
+            max-width: 320px;
+            border: 2px solid #c41e3a;
+            display: none;
+        }
+
+        .camera-error.show {
+            display: block;
+        }
+
         .timer-display {
             position: fixed;
-            top: 90px;
+            top: 280px;
             right: 20px;
             background: white;
             padding: 15px 25px;
@@ -338,11 +401,21 @@
     </style>
 </head>
 <body>
-    <!-- Camera Indicator (Placebo) -->
-    <div class="camera-indicator">
-        <div class="recording-dot"></div>
-        <span class="camera-icon">📹</span>
-        <span class="camera-text">Запись ведется</span>
+    <!-- Camera Feed -->
+    <div class="camera-feed" id="cameraFeed">
+        <video id="cameraVideo" autoplay playsinline muted></video>
+        <div class="camera-status">
+            <div class="recording-dot"></div>
+            <span>🔴 REC</span>
+        </div>
+    </div>
+
+    <!-- Camera Error Message -->
+    <div class="camera-error" id="cameraError">
+        <strong>⚠️ Ошибка доступа к камере</strong>
+        <p style="margin-top: 8px; font-size: 13px;">
+            Не удалось получить доступ к камере. Пожалуйста, разрешите доступ в настройках браузера.
+        </p>
     </div>
 
     <!-- Timer Display -->
@@ -359,6 +432,93 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
+        // =====================================================
+        // CAMERA STREAMING FUNCTIONALITY
+        // =====================================================
+        let cameraStream = null;
+
+        async function startCamera() {
+            console.log('🎥 Attempting to start camera...');
+            const videoElement = document.getElementById('cameraVideo');
+            const cameraFeed = document.getElementById('cameraFeed');
+            const cameraError = document.getElementById('cameraError');
+
+            try {
+                // Request camera access with specific constraints
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        facingMode: 'user'
+                    },
+                    audio: false
+                });
+
+                // Store stream reference for cleanup
+                cameraStream = stream;
+
+                // Attach stream to video element
+                videoElement.srcObject = stream;
+
+                // Show camera feed
+                cameraFeed.classList.add('active');
+                cameraError.classList.remove('show');
+
+                console.log('✅ Camera started successfully');
+            } catch (error) {
+                console.error('❌ Camera access error:', error);
+
+                // Show error message
+                cameraError.classList.add('show');
+                cameraFeed.classList.remove('active');
+
+                // Update error message based on error type
+                const errorText = cameraError.querySelector('p');
+                if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+                    errorText.textContent = 'Доступ к камере запрещен. Разрешите использование камеры в настройках браузера и обновите страницу.';
+                } else if (error.name === 'NotFoundError') {
+                    errorText.textContent = 'Камера не найдена. Убедитесь, что к компьютеру подключена веб-камера.';
+                } else if (error.name === 'NotReadableError') {
+                    errorText.textContent = 'Камера занята другим приложением. Закройте другие программы, использующие камеру.';
+                } else {
+                    errorText.textContent = `Ошибка: ${error.message}`;
+                }
+
+                // Auto-hide error after 10 seconds
+                setTimeout(() => {
+                    cameraError.classList.remove('show');
+                }, 10000);
+            }
+        }
+
+        function stopCamera() {
+            console.log('🛑 Stopping camera...');
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(track => track.stop());
+                cameraStream = null;
+            }
+
+            const videoElement = document.getElementById('cameraVideo');
+            const cameraFeed = document.getElementById('cameraFeed');
+
+            if (videoElement) {
+                videoElement.srcObject = null;
+            }
+            if (cameraFeed) {
+                cameraFeed.classList.remove('active');
+            }
+
+            console.log('✅ Camera stopped');
+        }
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            stopCamera();
+        });
+
+        // =====================================================
+        // REACT APP
+        // =====================================================
         function App() {
             console.log('=== TEST APP LOADED - Self-Assessment Feature Active ===');
 
@@ -479,6 +639,14 @@
                 };
             }, [selfAssessmentSubmitted]);
 
+            // 🎥 Stop camera when test is completed
+            useEffect(() => {
+                if (completed) {
+                    console.log('🛑 Test completed - stopping camera monitoring');
+                    stopCamera();
+                }
+            }, [completed]);
+
             const loadQuestions = async () => {
                 const token = sessionStorage.getItem('halyk_token');
                 if (!token) {
@@ -598,6 +766,10 @@
                             setShowSelfAssessment(false);
                             // Don't set loading false yet, let loadQuestions handle it
                             await loadQuestions();
+
+                            // 🎥 START CAMERA for returning user
+                            console.log('🎥 Returning to active test - activating camera monitoring');
+                            await startCamera();
                         } else {
                             console.log('Showing self-assessment form');
                             setShowSelfAssessment(true);
@@ -641,6 +813,10 @@
                         // Now load the actual test questions
                         setLoading(true);
                         await loadQuestions();
+
+                        // 🎥 START CAMERA when test begins
+                        console.log('🎥 Test started - activating camera monitoring');
+                        await startCamera();
                     }
                 } catch (error) {
                     alert('Ошибка отправки самооценки');
