@@ -2050,12 +2050,12 @@ async def get_employee_completed_tests(employee_id: int, manager: dict = Depends
                 if not emp or emp[0] != department_id:
                     raise HTTPException(status_code=403, detail="Employee not in your department")
 
-                # Get completed tests with competencies and self-assessments
+                # Get all tests with competencies and self-assessments (including incomplete)
                 await cur.execute("""
                     SELECT
                         ust.id as test_id,
-                        ust.specialization,
-                        ust.profile,
+                        s.name as specialization,
+                        p.name as profile,
                         ust.completed_at,
                         ust.score,
                         ust.max_score,
@@ -2064,11 +2064,13 @@ async def get_employee_completed_tests(employee_id: int, manager: dict = Depends
                         csa.self_rating,
                         mcr.rating as manager_rating
                     FROM user_specialization_tests ust
+                    JOIN specializations s ON s.id = ust.specialization_id
+                    JOIN profiles p ON p.id = s.profile_id
                     JOIN competencies c ON c.specialization_id = ust.specialization_id
                     LEFT JOIN competency_self_assessments csa ON csa.user_test_id = ust.id AND csa.competency_id = c.id
                     LEFT JOIN manager_competency_ratings mcr ON mcr.user_test_id = ust.id AND mcr.competency_id = c.id AND mcr.manager_id = %s
-                    WHERE ust.user_id = %s AND ust.completed_at IS NOT NULL
-                    ORDER BY ust.completed_at DESC, c.name
+                    WHERE ust.user_id = %s
+                    ORDER BY ust.started_at DESC, c.name
                 """, (manager_id, employee_id))
 
                 rows = await cur.fetchall()
