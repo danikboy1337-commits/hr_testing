@@ -364,6 +364,187 @@
             color: #999;
             margin-top: 10px;
         }
+
+        .btn-details {
+            background: #667eea;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        .btn-details:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.6);
+            overflow-y: auto;
+        }
+
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 16px;
+            max-width: 900px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        .modal-header {
+            padding: 25px 30px;
+            border-bottom: 2px solid #f0f0f0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            background: white;
+            z-index: 10;
+        }
+
+        .modal-title {
+            font-size: 22px;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 28px;
+            cursor: pointer;
+            color: #999;
+            line-height: 1;
+            padding: 0;
+        }
+
+        .modal-close:hover {
+            color: #333;
+        }
+
+        .modal-body {
+            padding: 30px;
+        }
+
+        .detail-section {
+            margin-bottom: 30px;
+        }
+
+        .detail-section h3 {
+            font-size: 18px;
+            font-weight: 700;
+            color: #f5576c;
+            margin-bottom: 15px;
+        }
+
+        .detail-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .detail-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .detail-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #666;
+            text-transform: uppercase;
+        }
+
+        .detail-value {
+            font-size: 16px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .test-detail-card {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .test-detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .competency-detail {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            display: grid;
+            grid-template-columns: 1fr auto auto auto;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .competency-detail-name {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .rating-display {
+            padding: 8px 15px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .rating-display.self {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .rating-display.manager {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+
+        .rating-display.test {
+            background: #f3e5f5;
+            color: #7b1fa2;
+        }
+
+        .loader-modal {
+            text-align: center;
+            padding: 40px;
+            color: #f5576c;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
@@ -406,6 +587,19 @@
 
         <div id="content">
             <div class="loading">⏳ Загрузка сотрудников...</div>
+        </div>
+    </div>
+
+    <!-- Modal for employee details -->
+    <div class="modal" id="detailModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Детали сотрудника</h2>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <div class="loader-modal">Загрузка...</div>
+            </div>
         </div>
     </div>
 
@@ -503,6 +697,9 @@
                                     <div><strong>Компания:</strong> ${emp.company || 'Не указана'}</div>
                                 </div>
                             </div>
+                            <button class="btn-details" onclick="viewEmployeeDetails(${emp.id}, '${emp.name}', '${emp.surname}')">
+                                📋 Детали
+                            </button>
                         </div>
                 `;
 
@@ -664,6 +861,199 @@
 
         // Load data on page load
         loadData();
+
+        // Modal functions
+        function closeModal() {
+            document.getElementById('detailModal').classList.remove('active');
+        }
+
+        // Close modal on background click
+        document.getElementById('detailModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
+
+        async function viewEmployeeDetails(employeeId, employeeName, employeeSurname) {
+            document.getElementById('detailModal').classList.add('active');
+            document.getElementById('modalBody').innerHTML = '<div class="loader-modal">⏳ Загрузка данных сотрудника...</div>';
+
+            try {
+                // Fetch employee tests data
+                const response = await fetch(`/api/manager/employee-tests/${employeeId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to load employee data');
+                }
+
+                const data = await response.json();
+                const tests = data.tests || [];
+
+                // Find employee info from the employees array
+                const employee = employees.find(e => e.id === employeeId);
+
+                let html = `
+                    <div class="detail-section">
+                        <h3>👤 Информация о сотруднике</h3>
+                        <div class="detail-grid">
+                            <div class="detail-item">
+                                <div class="detail-label">ФИО</div>
+                                <div class="detail-value">${employeeName} ${employeeSurname}</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Телефон</div>
+                                <div class="detail-value">${employee?.phone || '-'}</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Компания</div>
+                                <div class="detail-value">${employee?.company || '-'}</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Должность</div>
+                                <div class="detail-value">${employee?.job_title || '-'}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                if (tests.length === 0) {
+                    html += `
+                        <div class="detail-section">
+                            <div style="text-align: center; padding: 40px; color: #999;">
+                                <div style="font-size: 48px; margin-bottom: 15px;">📝</div>
+                                <div style="font-size: 16px; font-weight: 600;">Сотрудник еще не прошел тесты</div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    html += `
+                        <div class="detail-section">
+                            <h3>📊 Результаты тестов (${tests.length})</h3>
+                    `;
+
+                    tests.forEach(test => {
+                        const completedDate = test.completed_at ?
+                            new Date(test.completed_at).toLocaleDateString('ru-RU', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                            }) : 'Не завершен';
+
+                        const percentage = ((test.score / test.max_score) * 100).toFixed(0);
+
+                        html += `
+                            <div class="test-detail-card">
+                                <div class="test-detail-header">
+                                    <div>
+                                        <div style="font-size: 18px; font-weight: 700; color: #333; margin-bottom: 5px;">
+                                            ${test.specialization} - ${test.profile}
+                                        </div>
+                                        <div style="font-size: 13px; color: #666;">
+                                            Дата прохождения: ${completedDate}
+                                        </div>
+                                    </div>
+                                    <div style="text-align: right;">
+                                        <div style="font-size: 24px; font-weight: 800; color: #f5576c;">
+                                            ${test.score}/${test.max_score}
+                                        </div>
+                                        <div style="font-size: 14px; color: #666;">
+                                            ${percentage}%
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <h4 style="font-size: 16px; font-weight: 700; color: #333; margin-bottom: 15px;">
+                                    Компетенции и оценки:
+                                </h4>
+                        `;
+
+                        test.competencies.forEach(comp => {
+                            // Calculate test percentage for this competency (assuming even distribution)
+                            const testScore = Math.round((test.score / test.max_score) * 10);
+
+                            html += `
+                                <div class="competency-detail">
+                                    <div class="competency-detail-name">${comp.competency_name}</div>
+                                    ${comp.self_rating ?
+                                        `<div class="rating-display self" title="Самооценка сотрудника">
+                                            Самооценка: ${comp.self_rating}/10
+                                        </div>` :
+                                        `<div class="rating-display self" style="opacity: 0.5;">
+                                            Нет самооценки
+                                        </div>`
+                                    }
+                                    ${comp.manager_rating ?
+                                        `<div class="rating-display manager" title="Оценка руководителя">
+                                            Ваша оценка: ${comp.manager_rating}/10
+                                        </div>` :
+                                        `<div class="rating-display manager" style="opacity: 0.5;">
+                                            Не оценено
+                                        </div>`
+                                    }
+                                    <div class="rating-display test" title="Результат теста">
+                                        Тест: ~${testScore}/10
+                                    </div>
+                                </div>
+                            `;
+                        });
+
+                        html += `
+                            </div>
+                        `;
+                    });
+
+                    html += `</div>`;
+
+                    // Add summary
+                    const totalTests = tests.length;
+                    const avgScore = (tests.reduce((sum, t) => sum + (t.score / t.max_score), 0) / totalTests * 100).toFixed(0);
+                    const ratedCompetencies = tests.reduce((sum, t) =>
+                        sum + t.competencies.filter(c => c.manager_rating).length, 0
+                    );
+                    const totalCompetencies = tests.reduce((sum, t) => sum + t.competencies.length, 0);
+
+                    html += `
+                        <div class="detail-section" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 25px; border-radius: 12px;">
+                            <h3 style="color: white; margin-bottom: 15px;">📈 Итоговая статистика</h3>
+                            <div class="detail-grid">
+                                <div class="detail-item">
+                                    <div class="detail-label" style="color: rgba(255,255,255,0.8);">Пройдено тестов</div>
+                                    <div class="detail-value" style="color: white; font-size: 24px; font-weight: 800;">${totalTests}</div>
+                                </div>
+                                <div class="detail-item">
+                                    <div class="detail-label" style="color: rgba(255,255,255,0.8);">Средний балл</div>
+                                    <div class="detail-value" style="color: white; font-size: 24px; font-weight: 800;">${avgScore}%</div>
+                                </div>
+                                <div class="detail-item">
+                                    <div class="detail-label" style="color: rgba(255,255,255,0.8);">Оценено компетенций</div>
+                                    <div class="detail-value" style="color: white; font-size: 24px; font-weight: 800;">${ratedCompetencies}/${totalCompetencies}</div>
+                                </div>
+                                <div class="detail-item">
+                                    <div class="detail-label" style="color: rgba(255,255,255,0.8);">Прогресс оценки</div>
+                                    <div class="detail-value" style="color: white; font-size: 24px; font-weight: 800;">${totalCompetencies > 0 ? Math.round(ratedCompetencies / totalCompetencies * 100) : 0}%</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                document.getElementById('modalBody').innerHTML = html;
+
+            } catch (error) {
+                console.error('Error loading employee details:', error);
+                document.getElementById('modalBody').innerHTML = `
+                    <div style="text-align: center; padding: 40px; color: #e53e3e;">
+                        <div style="font-size: 48px; margin-bottom: 15px;">❌</div>
+                        <div style="font-size: 16px; font-weight: 600;">Ошибка загрузки данных</div>
+                        <div style="font-size: 14px; margin-top: 10px; color: #666;">${error.message}</div>
+                    </div>
+                `;
+            }
+        }
     </script>
 </body>
 </html>
