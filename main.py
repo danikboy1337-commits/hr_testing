@@ -1458,21 +1458,28 @@ async def get_hr_results(
                     if result['duration_seconds']:
                         result['duration_minutes'] = round(result['duration_seconds'] / 60, 1)
 
-                    # Calculate weighted score: Test 50% + Manager 40% + Self 10%
-                    test_percentage = result.get('percentage') or 0
+                    # Calculate weighted score using the formula:
+                    # weighted_score = ((test_score * 0.5) + (mgr_rating * 0.4) + (self_rtg * 0.1)) / (max_score + 10 + 10) * 100
+                    # Where: max_score = max test score, 10 = max manager rating, 10 = max self-assessment rating
+
+                    test_score = result.get('score') or 0
+                    max_score = result.get('max_score') or 24  # Default to 24 if not available
                     manager_rating = result.get('avg_manager_rating') or 0
                     self_rating = result.get('avg_self_rating') or 0
 
                     # Handle None/NULL values safely
-                    test_pct = float(test_percentage) if test_percentage is not None else 0
+                    test_score = float(test_score) if test_score is not None else 0
+                    max_score = float(max_score) if max_score is not None and max_score > 0 else 24
                     mgr_rating = float(manager_rating) if manager_rating is not None else 0
                     self_rtg = float(self_rating) if self_rating is not None else 0
 
+                    # Apply the weighted formula
                     weighted_score = (
-                        (test_pct * 0.5) +  # Test score (50%)
-                        (mgr_rating * 10 * 0.4) +  # Manager rating converted to percentage (40%)
-                        (self_rtg * 10 * 0.1)  # Self rating converted to percentage (10%)
-                    )
+                        (test_score * 0.5) +
+                        (mgr_rating * 0.4) +
+                        (self_rtg * 0.1)
+                    ) / (max_score + 10 + 10) * 100
+
                     result['weighted_score'] = round(weighted_score, 2)
 
                     results.append(result)
@@ -1723,17 +1730,18 @@ async def get_manager_results(
                     WHERE csa.user_test_id = ust.id
                 ) as avg_self_rating,
                 ROUND(
-                    (ust.score::numeric / ust.max_score::numeric * 100 * 0.5) +
-                    COALESCE((
-                        SELECT AVG(mcr.rating) / 10.0 * 100 * 0.4
+                    ((ust.score * 0.5) +
+                     COALESCE((
+                        SELECT AVG(mcr.rating) * 0.4
                         FROM manager_competency_ratings mcr
                         WHERE mcr.user_test_id = ust.id AND mcr.manager_id = %s
                     ), 0) +
-                    COALESCE((
-                        SELECT AVG(csa.self_rating) / 10.0 * 100 * 0.1
+                     COALESCE((
+                        SELECT AVG(csa.self_rating) * 0.1
                         FROM competency_self_assessments csa
                         WHERE csa.user_test_id = ust.id
-                    ), 0),
+                    ), 0))
+                    / (ust.max_score + 10 + 10) * 100,
                     2
                 ) as weighted_score
             FROM user_specialization_tests ust
