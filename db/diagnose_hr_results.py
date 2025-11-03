@@ -149,7 +149,7 @@ async def diagnose_hr_results():
                     print("\n✅ Database has completed tests!")
                     print("\n💡 NEXT STEPS:")
                     print("   1. Visit: http://localhost:8000/hr")
-                    print("   2. Enter password: 159753")
+                    print("   2. Enter password (configured in .env as HR_PASSWORD)")
                     print("   3. Click on 'Результаты тестов'")
                     print("   4. Open browser DevTools (F12)")
                     print("   5. Check Console tab for errors")

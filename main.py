@@ -1270,7 +1270,6 @@ async def get_dashboard_stats():
 # =====================================================
 # API - HR PANEL
 # =====================================================
-HR_PASSWORD = "159753"
 
 # =====================================================
 # API - HR LOGIN (ОБНОВЛЕННЫЙ!)
@@ -1278,7 +1277,7 @@ HR_PASSWORD = "159753"
 @app.post("/api/hr/login")
 async def hr_login(request: Request, password: str, response: Response):
     """Вход в HR панель - устанавливает cookie"""
-    if password == HR_PASSWORD:
+    if password == config.HR_PASSWORD:
         token = create_access_token(user_id=0, phone="hr_admin")
         
         # Устанавливаем httpOnly cookie (защита от XSS)

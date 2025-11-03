@@ -19,5 +19,8 @@ ORG_NAME = "Халык банк"
 ORG_LOGO = "/static/images/halyk_logo.png"
 ORG_PRIMARY_COLOR = "#1DB584"
 
+# Security
+HR_PASSWORD = os.getenv("HR_PASSWORD", "159753")  # Default for backward compatibility
+
 RECAPTCHA_SITE_KEY = os.getenv("RECAPTCHA_SITE_KEY", "")
 RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY", "")
