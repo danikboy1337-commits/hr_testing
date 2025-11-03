@@ -556,6 +556,7 @@
                             <th>Специализация</th>
                             <th>Балл</th>
                             <th>%</th>
+                            <th>Итоговая оценка</th>
                             <th>Уровень</th>
                             <th>Самооценка</th>
                             <th>Время</th>
@@ -565,7 +566,7 @@
                     </thead>
                     <tbody id="resultsBody">
                         <tr>
-                            <td colspan="13" class="loader">Загрузка...</td>
+                            <td colspan="14" class="loader">Загрузка...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -640,7 +641,7 @@
             } catch (error) {
                 console.error('Error loading results:', error);
                 document.getElementById('resultsBody').innerHTML =
-                    '<tr><td colspan="12" class="empty-state"><div class="empty-state-icon">❌</div><div class="empty-state-text">Ошибка загрузки данных</div></td></tr>';
+                    '<tr><td colspan="14" class="empty-state"><div class="empty-state-icon">❌</div><div class="empty-state-text">Ошибка загрузки данных</div></td></tr>';
             }
         }
 
@@ -651,7 +652,7 @@
             if (results.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="13" class="empty-state">
+                        <td colspan="14" class="empty-state">
                             <div class="empty-state-icon">📭</div>
                             <div class="empty-state-text">Нет результатов</div>
                         </td>
@@ -681,6 +682,23 @@
                     selfAssessmentHtml = `<span class="level-badge ${ratingClass}" title="${details}" style="cursor: help;">📝 ${avgSelfRating}/10</span>`;
                 }
 
+                // Render weighted score with breakdown tooltip
+                const weightedScore = result.weighted_score || result.percentage;
+                const hasManagerRating = result.avg_manager_rating !== null && result.avg_manager_rating !== undefined;
+                const hasSelfRating = result.avg_self_rating !== null && result.avg_self_rating !== undefined;
+
+                let weightedTooltip = `Тест: ${result.percentage}% (50%)`;
+                if (hasManagerRating) {
+                    weightedTooltip += `\nРуководитель: ${(result.avg_manager_rating * 10).toFixed(1)}% (40%)`;
+                }
+                if (hasSelfRating) {
+                    weightedTooltip += `\nСамооценка: ${(result.avg_self_rating * 10).toFixed(1)}% (10%)`;
+                }
+
+                const weightedScoreClass = weightedScore >= 80 ? 'level-senior' :
+                                          weightedScore >= 50 ? 'level-middle' : 'level-junior';
+                const weightedScoreHtml = `<span class="level-badge ${weightedScoreClass}" title="${weightedTooltip}" style="cursor: help; font-size: 15px; font-weight: 800;">⭐ ${weightedScore}%</span>`;
+
                 return `
                     <tr>
                         <td>${result.test_id}</td>
@@ -691,6 +709,7 @@
                         <td>${result.specialization}</td>
                         <td class="score-display">${result.score}/${result.max_score}</td>
                         <td><strong>${result.percentage}%</strong></td>
+                        <td>${weightedScoreHtml}</td>
                         <td><span class="level-badge level-${result.level.toLowerCase()}">${result.level}</span></td>
                         <td>${selfAssessmentHtml}</td>
                         <td>${result.duration_minutes ? result.duration_minutes + ' мин' : '-'}</td>
