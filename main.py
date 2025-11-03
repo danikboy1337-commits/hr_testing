@@ -1392,7 +1392,44 @@ async def get_hr_results(
                     FROM competency_self_assessments csa
                     JOIN competencies c ON csa.competency_id = c.id
                     WHERE csa.user_test_id = ust.id
-                ) as self_assessments
+                ) as self_assessments,
+                -- Average manager rating (scale 1-10)
+                (
+                    SELECT AVG(mcr.rating)
+                    FROM manager_competency_ratings mcr
+                    WHERE mcr.user_test_id = ust.id
+                ) as avg_manager_rating,
+                -- Average self rating (scale 1-10)
+                (
+                    SELECT AVG(csa.self_rating)
+                    FROM competency_self_assessments csa
+                    WHERE csa.user_test_id = ust.id
+                ) as avg_self_rating,
+                -- Weighted score: Test 50% + Manager 40% + Self 10% (normalized to 0-100)
+                ROUND(
+                    COALESCE(
+                        (
+                            -- Test score (50%)
+                            (ust.score::numeric / ust.max_score::numeric * 100) * 0.5
+                            +
+                            -- Manager rating converted to 0-100 scale (40%)
+                            COALESCE((
+                                SELECT AVG(mcr.rating) * 10
+                                FROM manager_competency_ratings mcr
+                                WHERE mcr.user_test_id = ust.id
+                            ), 0) * 0.4
+                            +
+                            -- Self rating converted to 0-100 scale (10%)
+                            COALESCE((
+                                SELECT AVG(csa.self_rating) * 10
+                                FROM competency_self_assessments csa
+                                WHERE csa.user_test_id = ust.id
+                            ), 0) * 0.1
+                        ),
+                        (ust.score::numeric / ust.max_score::numeric * 100)
+                    ),
+                    2
+                ) as weighted_score
             FROM user_specialization_tests ust
             JOIN users u ON ust.user_id = u.id
             JOIN specializations s ON ust.specialization_id = s.id
@@ -1541,7 +1578,7 @@ async def get_hr_result_detail(test_id: int):
                     JOIN users u ON ust.user_id = u.id
                     JOIN specializations s ON ust.specialization_id = s.id
                     JOIN profiles p ON s.profile_id = p.id
-                    WHERE ust.id = $1
+                    WHERE ust.id = %s
                 """, (test_id,))
                 test_info = await cur.fetchone()
 
@@ -1563,7 +1600,7 @@ async def get_hr_result_detail(test_id: int):
                     JOIN questions q ON ta.question_id = q.id
                     JOIN topics t ON q.topic_id = t.id
                     JOIN competencies c ON t.competency_id = c.id
-                    WHERE ta.user_test_id = $1
+                    WHERE ta.user_test_id = %s
                     ORDER BY c.id, t.id, q.level
                 """, (test_id,))
                 answers = await cur.fetchall()
@@ -1572,7 +1609,7 @@ async def get_hr_result_detail(test_id: int):
                 await cur.execute("""
                     SELECT recommendation_text, created_at
                     FROM ai_recommendations
-                    WHERE user_test_id = $1
+                    WHERE user_test_id = %s
                 """, (test_id,))
                 ai_rec = await cur.fetchone()
 
