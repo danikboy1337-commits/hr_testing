@@ -2160,14 +2160,92 @@ async def submit_competency_ratings(data: CompetencyRatingSubmit, manager: dict 
 
 @app.get("/api/hr/ratings")
 async def get_all_ratings(hr_user: dict = Depends(verify_hr_cookie)):
-    """DEPRECATED: Old API - Use HR results panel instead
+    """Get all competency-based ratings from managers across all departments"""
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Get all competency ratings with employee, manager, and test info
+                await cur.execute("""
+                    SELECT
+                        mcr.id,
+                        mcr.employee_id,
+                        emp.name as employee_name,
+                        emp.surname as employee_surname,
+                        emp.phone as employee_phone,
+                        emp.company as employee_company,
+                        emp.job_title as employee_job_title,
+                        d_emp.name as employee_department,
+                        mcr.manager_id,
+                        mgr.name as manager_name,
+                        mgr.surname as manager_surname,
+                        d_mgr.name as manager_department,
+                        mcr.user_test_id,
+                        s.name as specialization,
+                        p.name as profile,
+                        c.name as competency_name,
+                        mcr.competency_id,
+                        mcr.rating,
+                        mcr.created_at,
+                        mcr.updated_at,
+                        ust.score as test_score,
+                        ust.max_score as test_max_score,
+                        ust.completed_at,
+                        csa.self_rating
+                    FROM manager_competency_ratings mcr
+                    JOIN users emp ON mcr.employee_id = emp.id
+                    JOIN users mgr ON mcr.manager_id = mgr.id
+                    LEFT JOIN departments d_emp ON emp.department_id = d_emp.id
+                    LEFT JOIN departments d_mgr ON mgr.department_id = d_mgr.id
+                    JOIN user_specialization_tests ust ON mcr.user_test_id = ust.id
+                    JOIN specializations s ON ust.specialization_id = s.id
+                    JOIN profiles p ON s.profile_id = p.id
+                    JOIN competencies c ON mcr.competency_id = c.id
+                    LEFT JOIN competency_self_assessments csa
+                        ON csa.user_test_id = ust.id
+                        AND csa.competency_id = mcr.competency_id
+                    ORDER BY mcr.created_at DESC
+                """)
 
-    Returns empty data for backward compatibility"""
-    return {
-        "status": "success",
-        "ratings": [],
-        "message": "This API is deprecated. Use the new competency-based rating system."
-    }
+                rows = await cur.fetchall()
+
+                ratings = []
+                for row in rows:
+                    test_percentage = (row[20] / row[21] * 100) if row[21] > 0 else 0
+
+                    ratings.append({
+                        "id": row[0],
+                        "employee_id": row[1],
+                        "employee_name": f"{row[2]} {row[3]}",
+                        "employee_phone": row[4],
+                        "employee_company": row[5],
+                        "employee_job_title": row[6],
+                        "employee_department": row[7],
+                        "manager_id": row[8],
+                        "manager_name": f"{row[9]} {row[10]}",
+                        "manager_department": row[11],
+                        "user_test_id": row[12],
+                        "specialization": row[13],
+                        "profile": row[14],
+                        "competency_name": row[15],
+                        "competency_id": row[16],
+                        "rating": row[17],
+                        "created_at": row[18].isoformat() if row[18] else None,
+                        "updated_at": row[19].isoformat() if row[19] else None,
+                        "test_score": row[20],
+                        "test_max_score": row[21],
+                        "test_percentage": round(test_percentage, 1),
+                        "test_completed_at": row[22].isoformat() if row[22] else None,
+                        "self_rating": row[23]
+                    })
+
+                return {
+                    "status": "success",
+                    "ratings": ratings,
+                    "total": len(ratings)
+                }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # =====================================================
 # API - МОНИТОРИНГ
