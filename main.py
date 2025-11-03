@@ -1393,43 +1393,16 @@ async def get_hr_results(
                     JOIN competencies c ON csa.competency_id = c.id
                     WHERE csa.user_test_id = ust.id
                 ) as self_assessments,
-                -- Average manager rating (scale 1-10)
                 (
                     SELECT AVG(mcr.rating)
                     FROM manager_competency_ratings mcr
                     WHERE mcr.user_test_id = ust.id
                 ) as avg_manager_rating,
-                -- Average self rating (scale 1-10)
                 (
                     SELECT AVG(csa.self_rating)
                     FROM competency_self_assessments csa
                     WHERE csa.user_test_id = ust.id
-                ) as avg_self_rating,
-                -- Weighted score: Test 50% + Manager 40% + Self 10% (normalized to 0-100)
-                ROUND(
-                    COALESCE(
-                        (
-                            -- Test score (50%)
-                            (ust.score::numeric / ust.max_score::numeric * 100) * 0.5
-                            +
-                            -- Manager rating converted to 0-100 scale (40%)
-                            COALESCE((
-                                SELECT AVG(mcr.rating) * 10
-                                FROM manager_competency_ratings mcr
-                                WHERE mcr.user_test_id = ust.id
-                            ), 0) * 0.4
-                            +
-                            -- Self rating converted to 0-100 scale (10%)
-                            COALESCE((
-                                SELECT AVG(csa.self_rating) * 10
-                                FROM competency_self_assessments csa
-                                WHERE csa.user_test_id = ust.id
-                            ), 0) * 0.1
-                        ),
-                        (ust.score::numeric / ust.max_score::numeric * 100)
-                    ),
-                    2
-                ) as weighted_score
+                ) as avg_self_rating
             FROM user_specialization_tests ust
             JOIN users u ON ust.user_id = u.id
             JOIN specializations s ON ust.specialization_id = s.id
@@ -1481,6 +1454,19 @@ async def get_hr_results(
                     # Convert duration to minutes
                     if result['duration_seconds']:
                         result['duration_minutes'] = round(result['duration_seconds'] / 60, 1)
+
+                    # Calculate weighted score: Test 50% + Manager 40% + Self 10%
+                    test_percentage = result['percentage']
+                    manager_rating = result.get('avg_manager_rating') or 0
+                    self_rating = result.get('avg_self_rating') or 0
+
+                    weighted_score = (
+                        (test_percentage * 0.5) +  # Test score (50%)
+                        (manager_rating * 10 * 0.4) +  # Manager rating converted to percentage (40%)
+                        (self_rating * 10 * 0.1)  # Self rating converted to percentage (10%)
+                    )
+                    result['weighted_score'] = round(weighted_score, 2)
+
                     results.append(result)
 
                 return {"status": "success", "results": results, "count": len(results)}
