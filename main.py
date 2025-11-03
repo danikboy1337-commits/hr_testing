@@ -1373,10 +1373,13 @@ async def get_hr_results(
                 p.name as profile,
                 ust.score,
                 ust.max_score,
-                ROUND((ust.score::numeric / ust.max_score::numeric * 100), 2) as percentage,
                 CASE
-                    WHEN (ust.score::numeric / ust.max_score::numeric * 100) >= 67 THEN 'Senior'
-                    WHEN (ust.score::numeric / ust.max_score::numeric * 100) >= 34 THEN 'Middle'
+                    WHEN ust.max_score > 0 THEN ROUND((ust.score::numeric / ust.max_score::numeric * 100), 2)
+                    ELSE 0
+                END as percentage,
+                CASE
+                    WHEN ust.max_score > 0 AND (ust.score::numeric / ust.max_score::numeric * 100) >= 67 THEN 'Senior'
+                    WHEN ust.max_score > 0 AND (ust.score::numeric / ust.max_score::numeric * 100) >= 34 THEN 'Middle'
                     ELSE 'Junior'
                 END as level,
                 ust.started_at,
@@ -1456,14 +1459,19 @@ async def get_hr_results(
                         result['duration_minutes'] = round(result['duration_seconds'] / 60, 1)
 
                     # Calculate weighted score: Test 50% + Manager 40% + Self 10%
-                    test_percentage = result['percentage']
+                    test_percentage = result.get('percentage') or 0
                     manager_rating = result.get('avg_manager_rating') or 0
                     self_rating = result.get('avg_self_rating') or 0
 
+                    # Handle None/NULL values safely
+                    test_pct = float(test_percentage) if test_percentage is not None else 0
+                    mgr_rating = float(manager_rating) if manager_rating is not None else 0
+                    self_rtg = float(self_rating) if self_rating is not None else 0
+
                     weighted_score = (
-                        (test_percentage * 0.5) +  # Test score (50%)
-                        (manager_rating * 10 * 0.4) +  # Manager rating converted to percentage (40%)
-                        (self_rating * 10 * 0.1)  # Self rating converted to percentage (10%)
+                        (test_pct * 0.5) +  # Test score (50%)
+                        (mgr_rating * 10 * 0.4) +  # Manager rating converted to percentage (40%)
+                        (self_rtg * 10 * 0.1)  # Self rating converted to percentage (10%)
                     )
                     result['weighted_score'] = round(weighted_score, 2)
 
@@ -1471,7 +1479,10 @@ async def get_hr_results(
 
                 return {"status": "success", "results": results, "count": len(results)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"ERROR in /api/hr/results: {error_details}")
+        raise HTTPException(status_code=500, detail=f"{str(e)} | {error_details}")
 
 @app.get("/api/hr/results/stats")
 async def get_hr_results_stats():
