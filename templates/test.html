@@ -870,8 +870,9 @@
             const [selfRatings, setSelfRatings] = useState({});
             const [showSelfAssessment, setShowSelfAssessment] = useState(false);
             const [selfAssessmentSubmitted, setSelfAssessmentSubmitted] = useState(false);
-            const [timeRemaining, setTimeRemaining] = useState(40 * 60); // 40 minutes in seconds
+            const [timeRemaining, setTimeRemaining] = useState(40 * 60); // Will be updated from API
             const [timerExpired, setTimerExpired] = useState(false);
+            const [timeLimitMinutes, setTimeLimitMinutes] = useState(40); // Default 40 minutes
 
             console.log('Initial state - showSelfAssessment:', false, 'competencies:', []);
 
@@ -1006,6 +1007,14 @@
 
                     setQuestions(data.questions);
                     setProgress(data.progress);
+
+                    // Set time limit from API (convert minutes to seconds)
+                    if (data.time_limit_minutes) {
+                        const timeLimitSeconds = data.time_limit_minutes * 60;
+                        setTimeLimitMinutes(data.time_limit_minutes);
+                        setTimeRemaining(timeLimitSeconds);
+                        console.log(`⏱️ Test time limit: ${data.time_limit_minutes} minutes`);
+                    }
                 } catch (error) {
                     alert('Ошибка загрузки вопросов');
                 } finally {

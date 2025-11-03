@@ -780,7 +780,8 @@ async def get_test_questions(user_test_id: int, current_user: dict = Depends(get
             "status": "success",
             "questions": all_questions,
             "competencies": list(competencies_dict.values()),
-            "progress": progress
+            "progress": progress,
+            "time_limit_minutes": config.TEST_TIME_LIMIT_MINUTES
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1459,8 +1460,9 @@ async def get_hr_results(
                         result['duration_minutes'] = round(result['duration_seconds'] / 60, 1)
 
                     # Calculate weighted score using the formula:
-                    # weighted_score = ((test_score * 0.5) + (mgr_rating * 0.4) + (self_rtg * 0.1)) / (max_score + 10 + 10) * 100
+                    # weighted_score = ((test_score * TEST_WEIGHT) + (mgr_rating * MANAGER_WEIGHT) + (self_rtg * SELF_WEIGHT)) / (max_score + 10 + 10) * 100
                     # Where: max_score = max test score, 10 = max manager rating, 10 = max self-assessment rating
+                    # Weights are configurable via .env file
 
                     test_score = result.get('score') or 0
                     max_score = result.get('max_score') or 24  # Default to 24 if not available
@@ -1473,11 +1475,11 @@ async def get_hr_results(
                     mgr_rating = float(manager_rating) if manager_rating is not None else 0
                     self_rtg = float(self_rating) if self_rating is not None else 0
 
-                    # Apply the weighted formula
+                    # Apply the weighted formula using configurable weights
                     weighted_score = (
-                        (test_score * 0.5) +
-                        (mgr_rating * 0.4) +
-                        (self_rtg * 0.1)
+                        (test_score * config.TEST_WEIGHT) +
+                        (mgr_rating * config.MANAGER_WEIGHT) +
+                        (self_rtg * config.SELF_WEIGHT)
                     ) / (max_score + 10 + 10) * 100
 
                     result['weighted_score'] = round(weighted_score, 2)
@@ -1686,7 +1688,8 @@ async def get_manager_results(
     manager_id = manager.get("user_id")
 
     try:
-        query = """
+        # Use configurable weights from .env file
+        query = f"""
             SELECT
                 ust.id as test_id,
                 u.id as user_id,
@@ -1730,14 +1733,14 @@ async def get_manager_results(
                     WHERE csa.user_test_id = ust.id
                 ) as avg_self_rating,
                 ROUND(
-                    ((ust.score * 0.5) +
+                    ((ust.score * {config.TEST_WEIGHT}) +
                      COALESCE((
-                        SELECT AVG(mcr.rating) * 0.4
+                        SELECT AVG(mcr.rating) * {config.MANAGER_WEIGHT}
                         FROM manager_competency_ratings mcr
                         WHERE mcr.user_test_id = ust.id AND mcr.manager_id = %s
                     ), 0) +
                      COALESCE((
-                        SELECT AVG(csa.self_rating) * 0.1
+                        SELECT AVG(csa.self_rating) * {config.SELF_WEIGHT}
                         FROM competency_self_assessments csa
                         WHERE csa.user_test_id = ust.id
                     ), 0))
