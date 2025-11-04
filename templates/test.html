@@ -874,6 +874,10 @@
             const [cameraReady, setCameraReady] = useState(false);
             const [faceDetected, setFaceDetected] = useState(false);
             const [cameraVerificationMessage, setCameraVerificationMessage] = useState('Инициализация камеры...');
+            const [isPaused, setIsPaused] = useState(false);
+            const [pauseReason, setPauseReason] = useState('');
+            const [faceCount, setFaceCount] = useState(0);
+            const [isFullscreen, setIsFullscreen] = useState(false);
             const [timeRemaining, setTimeRemaining] = useState(40 * 60); // Will be updated from API
             const [timerExpired, setTimerExpired] = useState(false);
             const [timeLimitMinutes, setTimeLimitMinutes] = useState(40); // Default 40 minutes
@@ -882,6 +886,59 @@
 
             const urlParams = new URLSearchParams(window.location.search);
             const userTestId = urlParams.get('user_test_id');
+
+            // Fullscreen helper functions
+            const enterFullscreen = async () => {
+                try {
+                    const elem = document.documentElement;
+                    if (elem.requestFullscreen) {
+                        await elem.requestFullscreen();
+                    } else if (elem.webkitRequestFullscreen) {
+                        await elem.webkitRequestFullscreen();
+                    } else if (elem.msRequestFullscreen) {
+                        await elem.msRequestFullscreen();
+                    }
+                    console.log('✅ Entered fullscreen mode');
+                } catch (error) {
+                    console.error('❌ Failed to enter fullscreen:', error);
+                    alert('Не удалось перейти в полноэкранный режим. Пожалуйста, нажмите F11 или разрешите полноэкранный режим.');
+                }
+            };
+
+            // Monitor fullscreen changes
+            useEffect(() => {
+                const handleFullscreenChange = () => {
+                    const isCurrentlyFullscreen = !!(
+                        document.fullscreenElement ||
+                        document.webkitFullscreenElement ||
+                        document.msFullscreenElement
+                    );
+
+                    setIsFullscreen(isCurrentlyFullscreen);
+
+                    // If test has started and user exits fullscreen, pause the test
+                    if (selfAssessmentSubmitted && !showCameraSetup && !completed && !isCurrentlyFullscreen) {
+                        console.log('⚠️ Exited fullscreen - pausing test');
+                        setIsPaused(true);
+                        setPauseReason('fullscreen');
+                    } else if (isCurrentlyFullscreen && isPaused && pauseReason === 'fullscreen') {
+                        // Resume if they return to fullscreen
+                        console.log('✅ Returned to fullscreen - resuming test');
+                        setIsPaused(false);
+                        setPauseReason('');
+                    }
+                };
+
+                document.addEventListener('fullscreenchange', handleFullscreenChange);
+                document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+                document.addEventListener('msfullscreenchange', handleFullscreenChange);
+
+                return () => {
+                    document.removeEventListener('fullscreenchange', handleFullscreenChange);
+                    document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+                    document.removeEventListener('msfullscreenchange', handleFullscreenChange);
+                };
+            }, [selfAssessmentSubmitted, showCameraSetup, completed, isPaused, pauseReason]);
 
             useEffect(() => {
                 // Load competencies FIRST for self-assessment
@@ -898,9 +955,9 @@
                 }
             }, [questions]);
 
-            // Timer countdown effect - only starts AFTER self-assessment
+            // Timer countdown effect - only starts AFTER self-assessment and pauses when test is paused
             useEffect(() => {
-                if (!selfAssessmentSubmitted || completed || timerExpired) return;
+                if (!selfAssessmentSubmitted || completed || timerExpired || isPaused) return;
 
                 const timer = setInterval(() => {
                     setTimeRemaining(prev => {
@@ -915,7 +972,7 @@
                 }, 1000);
 
                 return () => clearInterval(timer);
-            }, [selfAssessmentSubmitted, completed, timerExpired]);
+            }, [selfAssessmentSubmitted, completed, timerExpired, isPaused]);
 
             // Update timer display
             useEffect(() => {
@@ -1242,13 +1299,44 @@
                     try {
                         // Detect faces using Blazeface
                         const predictions = await blazefaceModel.estimateFaces(videoElement, false);
+                        const numFaces = predictions ? predictions.length : 0;
 
-                        if (predictions && predictions.length > 0) {
-                            setFaceDetected(true);
-                            setCameraVerificationMessage('✅ Лицо обнаружено! Вы можете продолжить.');
-                        } else {
-                            setFaceDetected(false);
-                            setCameraVerificationMessage('⚠️ Лицо не обнаружено. Пожалуйста, расположитесь перед камерой.');
+                        setFaceCount(numFaces);
+
+                        // During camera setup (before test starts)
+                        if (showCameraSetup) {
+                            if (numFaces > 0) {
+                                setFaceDetected(true);
+                                setCameraVerificationMessage('✅ Лицо обнаружено! Вы можете продолжить.');
+                            } else {
+                                setFaceDetected(false);
+                                setCameraVerificationMessage('⚠️ Лицо не обнаружено. Пожалуйста, расположитесь перед камерой.');
+                            }
+                        }
+                        // During test - auto-pause/resume based on face count
+                        else if (selfAssessmentSubmitted && !completed) {
+                            if (numFaces === 0) {
+                                // No face detected - pause test
+                                if (!isPaused || pauseReason !== 'no_face') {
+                                    console.log('⚠️ No face detected - pausing test');
+                                    setIsPaused(true);
+                                    setPauseReason('no_face');
+                                }
+                            } else if (numFaces > 1) {
+                                // Multiple faces detected - pause test
+                                if (!isPaused || pauseReason !== 'multiple_faces') {
+                                    console.log('⚠️ Multiple faces detected - pausing test');
+                                    setIsPaused(true);
+                                    setPauseReason('multiple_faces');
+                                }
+                            } else {
+                                // Exactly 1 face - resume if paused due to face issues
+                                if (isPaused && (pauseReason === 'no_face' || pauseReason === 'multiple_faces')) {
+                                    console.log('✅ Single face detected - resuming test');
+                                    setIsPaused(false);
+                                    setPauseReason('');
+                                }
+                            }
                         }
                     } catch (error) {
                         console.error('Face detection error:', error);
@@ -1260,11 +1348,9 @@
             const proceedToTest = async () => {
                 console.log('▶️ Proceeding to test...');
 
-                // Stop verification interval
-                if (verificationInterval) {
-                    clearInterval(verificationInterval);
-                    verificationInterval = null;
-                }
+                // Enter fullscreen mode FIRST
+                console.log('🖥️ Entering fullscreen mode...');
+                await enterFullscreen();
 
                 // Show the main camera feed in the corner
                 const cameraFeed = document.getElementById('cameraFeed');
@@ -1277,6 +1363,9 @@
 
                 // Load test questions
                 await loadQuestions();
+
+                // Continue face verification during test (don't stop the interval)
+                // The face verification will now auto-pause/resume the test
 
                 // 🤖 START AI PROCTORING
                 console.log('🤖 Starting AI proctoring');
@@ -1813,6 +1902,103 @@
 
             return (
                 <div className="test-container">
+                    {/* Pause Overlay */}
+                    {isPaused && (
+                        <div style={{
+                            position: 'fixed',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            background: 'rgba(0, 0, 0, 0.95)',
+                            zIndex: 10000,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backdropFilter: 'blur(10px)'
+                        }}>
+                            <div style={{
+                                background: 'white',
+                                padding: '50px',
+                                borderRadius: '20px',
+                                maxWidth: '600px',
+                                textAlign: 'center',
+                                boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+                                border: '3px solid #ff9800'
+                            }}>
+                                <div style={{fontSize: '80px', marginBottom: '20px'}}>
+                                    {pauseReason === 'no_face' ? '👤' : pauseReason === 'multiple_faces' ? '👥' : '🖥️'}
+                                </div>
+                                <h2 style={{
+                                    color: '#ff9800',
+                                    fontSize: '32px',
+                                    marginBottom: '20px',
+                                    fontWeight: 'bold'
+                                }}>
+                                    ⏸️ Тест приостановлен
+                                </h2>
+                                <p style={{
+                                    color: '#333',
+                                    fontSize: '20px',
+                                    lineHeight: '1.6',
+                                    marginBottom: '30px'
+                                }}>
+                                    {pauseReason === 'no_face' && (
+                                        <>
+                                            <strong>Лицо не обнаружено</strong><br />
+                                            Пожалуйста, вернитесь перед камерой.<br />
+                                            Тест автоматически возобновится, когда вы окажетесь в кадре.
+                                        </>
+                                    )}
+                                    {pauseReason === 'multiple_faces' && (
+                                        <>
+                                            <strong>Обнаружено несколько человек</strong><br />
+                                            В кадре должен находиться только один участник.<br />
+                                            Тест возобновится, когда останется один человек.
+                                        </>
+                                    )}
+                                    {pauseReason === 'fullscreen' && (
+                                        <>
+                                            <strong>Требуется полноэкранный режим</strong><br />
+                                            Тест должен проходить в полноэкранном режиме.<br />
+                                            <button
+                                                onClick={enterFullscreen}
+                                                style={{
+                                                    marginTop: '20px',
+                                                    padding: '15px 40px',
+                                                    fontSize: '18px',
+                                                    fontWeight: 'bold',
+                                                    background: 'linear-gradient(135deg, #1DB584 0%, #10b981 100%)',
+                                                    color: 'white',
+                                                    border: 'none',
+                                                    borderRadius: '10px',
+                                                    cursor: 'pointer',
+                                                    boxShadow: '0 4px 12px rgba(29, 181, 132, 0.3)'
+                                                }}
+                                            >
+                                                Вернуться в полноэкранный режим
+                                            </button>
+                                        </>
+                                    )}
+                                </p>
+                                <div style={{
+                                    background: '#f8f9fa',
+                                    padding: '15px',
+                                    borderRadius: '10px',
+                                    marginTop: '20px'
+                                }}>
+                                    <p style={{
+                                        color: '#666',
+                                        fontSize: '14px',
+                                        margin: 0
+                                    }}>
+                                        ⏱️ Таймер приостановлен • Обнаружено лиц: {faceCount}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="progress">
                         <div className="progress-bar">
                             <div className="progress-fill" style={{width: `${overallProgress}%`}}></div>
@@ -1848,20 +2034,22 @@
                                 <div
                                     key={index}
                                     className={`option ${selectedAnswer === index + 1 ? 'selected' : ''}`}
-                                    onClick={() => !currentQuestion.is_answered && setSelectedAnswer(index + 1)}
+                                    onClick={() => !currentQuestion.is_answered && !isPaused && setSelectedAnswer(index + 1)}
+                                    style={{opacity: isPaused ? 0.5 : 1, cursor: isPaused ? 'not-allowed' : 'pointer'}}
                                 >
                                     {option}
                                 </div>
                             ))}
                         </div>
 
-                        <button 
-                            className="btn" 
+                        <button
+                            className="btn"
                             onClick={handleAnswer}
-                            disabled={selectedAnswer === null || loading || currentQuestion.is_answered}
+                            disabled={selectedAnswer === null || loading || currentQuestion.is_answered || isPaused}
                         >
-                            {loading ? '⏳ Отправка...' : 
+                            {loading ? '⏳ Отправка...' :
                              currentQuestion.is_answered ? 'Уже отвечен' :
+                             isPaused ? '⏸️ Тест приостановлен' :
                              (currentIndex < questions.length - 1 ? 'Следующий вопрос' : 'Завершить тест')}
                         </button>
                     </div>
