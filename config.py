@@ -26,9 +26,9 @@ RECAPTCHA_SITE_KEY = os.getenv("RECAPTCHA_SITE_KEY", "")
 RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY", "")
 
 # Test Configuration
-TEST_TIME_LIMIT_MINUTES = int(os.getenv("TEST_TIME_LIMIT_MINUTES", 40))
+TEST_TIME_LIMIT_MINUTES = int(os.getenv("TEST_TIME_LIMIT_MINUTES"))
 
 # Weighted Score Formula Weights
-TEST_WEIGHT = float(os.getenv("TEST_WEIGHT", 0.5))
-MANAGER_WEIGHT = float(os.getenv("MANAGER_WEIGHT", 0.4))
-SELF_WEIGHT = float(os.getenv("SELF_WEIGHT", 0.1))
+TEST_WEIGHT = float(os.getenv("TEST_WEIGHT"))
+MANAGER_WEIGHT = float(os.getenv("MANAGER_WEIGHT"))
+SELF_WEIGHT = float(os.getenv("SELF_WEIGHT"))
