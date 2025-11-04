@@ -870,6 +870,10 @@
             const [selfRatings, setSelfRatings] = useState({});
             const [showSelfAssessment, setShowSelfAssessment] = useState(false);
             const [selfAssessmentSubmitted, setSelfAssessmentSubmitted] = useState(false);
+            const [showCameraSetup, setShowCameraSetup] = useState(false);
+            const [cameraReady, setCameraReady] = useState(false);
+            const [faceDetected, setFaceDetected] = useState(false);
+            const [cameraVerificationMessage, setCameraVerificationMessage] = useState('Инициализация камеры...');
             const [timeRemaining, setTimeRemaining] = useState(40 * 60); // Will be updated from API
             const [timerExpired, setTimerExpired] = useState(false);
             const [timeLimitMinutes, setTimeLimitMinutes] = useState(40); // Default 40 minutes
@@ -1109,19 +1113,14 @@
 
                         // Check if self-assessment already submitted
                         if (data.already_submitted) {
-                            console.log('Self-assessment already submitted, loading questions');
+                            console.log('Self-assessment already submitted, showing camera setup');
                             setSelfAssessmentSubmitted(true);
                             setShowSelfAssessment(false);
-                            // Don't set loading false yet, let loadQuestions handle it
-                            await loadQuestions();
+                            setLoading(false);
 
-                            // 🎥 START CAMERA for returning user
-                            console.log('🎥 Returning to active test - activating camera monitoring');
-                            await startCamera();
-
-                            // 🤖 START AI PROCTORING for returning user
-                            console.log('🤖 Resuming AI proctoring');
-                            await startAIProctoring(parseInt(userTestId));
+                            // Show camera setup for returning user
+                            setShowCameraSetup(true);
+                            await initializeCameraVerification();
                         } else {
                             console.log('Showing self-assessment form');
                             setShowSelfAssessment(true);
@@ -1162,21 +1161,126 @@
                     if (data.status === 'success') {
                         setSelfAssessmentSubmitted(true);
                         setShowSelfAssessment(false);
-                        // Now load the actual test questions
-                        setLoading(true);
-                        await loadQuestions();
 
-                        // 🎥 START CAMERA when test begins
-                        console.log('🎥 Test started - activating camera monitoring');
-                        await startCamera();
+                        // Show camera setup/verification screen
+                        console.log('📸 Showing camera setup screen');
+                        setShowCameraSetup(true);
 
-                        // 🤖 START AI PROCTORING
-                        console.log('🤖 Starting AI proctoring');
-                        await startAIProctoring(parseInt(userTestId));
+                        // Initialize camera verification
+                        await initializeCameraVerification();
                     }
                 } catch (error) {
                     alert('Ошибка отправки самооценки');
                 }
+            };
+
+            // Initialize camera verification
+            const initializeCameraVerification = async () => {
+                console.log('🎥 Initializing camera for verification...');
+                setCameraVerificationMessage('Запуск камеры...');
+
+                try {
+                    // Request camera access
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            width: { ideal: 640 },
+                            height: { ideal: 480 },
+                            facingMode: 'user'
+                        },
+                        audio: false
+                    });
+
+                    // Store stream reference
+                    cameraStream = stream;
+
+                    // Attach stream to both setup video and main camera video
+                    const setupVideoElement = document.getElementById('setupCameraVideo');
+                    const mainVideoElement = document.getElementById('cameraVideo');
+
+                    if (setupVideoElement) {
+                        setupVideoElement.srcObject = stream;
+                    }
+                    if (mainVideoElement) {
+                        mainVideoElement.srcObject = stream;
+                    }
+
+                    setCameraReady(true);
+                    setCameraVerificationMessage('Камера активна. Проверка позиционирования...');
+
+                    // Load AI models if not already loaded
+                    if (!blazefaceModel || !faceLandmarksDetector) {
+                        setCameraVerificationMessage('Загрузка моделей распознавания лиц...');
+                        const loaded = await loadAIModels();
+                        if (!loaded) {
+                            setCameraVerificationMessage('⚠️ Ошибка загрузки моделей. Камера работает, но проверка лица недоступна.');
+                            setCameraReady(true); // Still allow proceeding if models fail
+                            setFaceDetected(true); // Allow proceeding even without face detection
+                            return;
+                        }
+                    }
+
+                    // Start face detection verification
+                    startFaceVerification();
+                } catch (error) {
+                    console.error('❌ Camera initialization error:', error);
+                    setCameraReady(false);
+                    setCameraVerificationMessage('❌ Ошибка доступа к камере. Пожалуйста, разрешите доступ к камере в настройках браузера.');
+                }
+            };
+
+            // Verify face positioning
+            let verificationInterval = null;
+            const startFaceVerification = () => {
+                console.log('👤 Starting face verification...');
+
+                verificationInterval = setInterval(async () => {
+                    const videoElement = document.getElementById('setupCameraVideo') || document.getElementById('cameraVideo');
+                    if (!videoElement || !cameraStream) {
+                        return;
+                    }
+
+                    try {
+                        // Detect faces using Blazeface
+                        const predictions = await blazefaceModel.estimateFaces(videoElement, false);
+
+                        if (predictions && predictions.length > 0) {
+                            setFaceDetected(true);
+                            setCameraVerificationMessage('✅ Лицо обнаружено! Вы можете продолжить.');
+                        } else {
+                            setFaceDetected(false);
+                            setCameraVerificationMessage('⚠️ Лицо не обнаружено. Пожалуйста, расположитесь перед камерой.');
+                        }
+                    } catch (error) {
+                        console.error('Face detection error:', error);
+                    }
+                }, 1000); // Check every second
+            };
+
+            // Proceed to test after camera verification
+            const proceedToTest = async () => {
+                console.log('▶️ Proceeding to test...');
+
+                // Stop verification interval
+                if (verificationInterval) {
+                    clearInterval(verificationInterval);
+                    verificationInterval = null;
+                }
+
+                // Show the main camera feed in the corner
+                const cameraFeed = document.getElementById('cameraFeed');
+                if (cameraFeed) {
+                    cameraFeed.classList.add('active');
+                }
+
+                setShowCameraSetup(false);
+                setLoading(true);
+
+                // Load test questions
+                await loadQuestions();
+
+                // 🤖 START AI PROCTORING
+                console.log('🤖 Starting AI proctoring');
+                await startAIProctoring(parseInt(userTestId));
             };
 
             if (loading) {
@@ -1310,6 +1414,192 @@
                             >
                                 Начать тест ({Object.keys(selfRatings).length}/{competencies.length} компетенций оценено)
                             </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            // Show camera setup/verification screen
+            if (showCameraSetup) {
+                return (
+                    <div className="test-container" style={{maxWidth: '900px', margin: '0 auto'}}>
+                        <div style={{
+                            marginTop: '20px',
+                            padding: '30px',
+                            background: '#fff',
+                            borderRadius: '16px',
+                            border: `3px solid ${faceDetected ? '#1DB584' : '#ff9800'}`,
+                            boxShadow: '0 6px 20px rgba(0, 0, 0, 0.1)',
+                            transition: 'border-color 0.3s ease'
+                        }}>
+                            <h2 style={{
+                                color: '#333',
+                                marginBottom: '10px',
+                                fontSize: '28px',
+                                textAlign: 'center',
+                                fontWeight: 'bold'
+                            }}>
+                                📸 Настройка камеры
+                            </h2>
+
+                            <p style={{
+                                color: '#666',
+                                marginBottom: '25px',
+                                fontSize: '16px',
+                                textAlign: 'center',
+                                lineHeight: '1.6'
+                            }}>
+                                Перед началом теста необходимо настроить камеру для мониторинга
+                            </p>
+
+                            {/* Camera Preview */}
+                            <div style={{
+                                position: 'relative',
+                                width: '100%',
+                                maxWidth: '640px',
+                                margin: '0 auto 25px',
+                                borderRadius: '12px',
+                                overflow: 'hidden',
+                                border: `4px solid ${faceDetected ? '#1DB584' : cameraReady ? '#ff9800' : '#ddd'}`,
+                                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                                background: '#000',
+                                transition: 'border-color 0.3s ease'
+                            }}>
+                                {/* Setup video preview - will show the camera stream */}
+                                <video
+                                    id="setupCameraVideo"
+                                    autoPlay
+                                    playsInline
+                                    muted
+                                    style={{
+                                        width: '100%',
+                                        height: 'auto',
+                                        display: 'block',
+                                        transform: 'scaleX(-1)' // Mirror the video
+                                    }}
+                                />
+
+                                {/* Overlay with face detection indicator */}
+                                <div style={{
+                                    position: 'absolute',
+                                    top: '15px',
+                                    left: '15px',
+                                    right: '15px',
+                                    padding: '12px 20px',
+                                    background: faceDetected
+                                        ? 'rgba(29, 181, 132, 0.95)'
+                                        : cameraReady
+                                            ? 'rgba(255, 152, 0, 0.95)'
+                                            : 'rgba(158, 158, 158, 0.95)',
+                                    borderRadius: '8px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '10px',
+                                    transition: 'background 0.3s ease'
+                                }}>
+                                    <span style={{fontSize: '24px'}}>
+                                        {faceDetected ? '✅' : cameraReady ? '⚠️' : '⏳'}
+                                    </span>
+                                    <span style={{
+                                        color: 'white',
+                                        fontWeight: 'bold',
+                                        fontSize: '16px'
+                                    }}>
+                                        {cameraVerificationMessage}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Instructions */}
+                            <div style={{
+                                background: '#f8f9fa',
+                                padding: '20px',
+                                borderRadius: '10px',
+                                marginBottom: '25px'
+                            }}>
+                                <h4 style={{
+                                    color: '#333',
+                                    marginBottom: '12px',
+                                    fontSize: '18px',
+                                    fontWeight: 'bold'
+                                }}>
+                                    📋 Инструкции по настройке:
+                                </h4>
+                                <ul style={{
+                                    color: '#666',
+                                    fontSize: '15px',
+                                    lineHeight: '1.8',
+                                    marginLeft: '20px',
+                                    listStyle: 'disc'
+                                }}>
+                                    <li>Убедитесь, что ваше лицо хорошо освещено</li>
+                                    <li>Расположитесь в центре кадра</li>
+                                    <li>Сохраняйте комфортное расстояние от камеры (40-60 см)</li>
+                                    <li>Уберите посторонние предметы из кадра</li>
+                                    <li>Дождитесь появления зеленой рамки (✅ Лицо обнаружено)</li>
+                                </ul>
+                            </div>
+
+                            {/* Warning about proctoring */}
+                            <div style={{
+                                background: '#fff3cd',
+                                padding: '15px',
+                                borderRadius: '8px',
+                                marginBottom: '25px',
+                                border: '2px solid #ffc107'
+                            }}>
+                                <p style={{
+                                    color: '#856404',
+                                    fontSize: '14px',
+                                    margin: 0,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '10px'
+                                }}>
+                                    <span style={{fontSize: '20px'}}>⚠️</span>
+                                    <span>
+                                        <strong>Внимание:</strong> Во время теста будет вестись видеонаблюдение с использованием AI
+                                        для обеспечения честности прохождения теста. Периодические фотографии будут отправляться
+                                        на анализ.
+                                    </span>
+                                </p>
+                            </div>
+
+                            {/* Continue button */}
+                            <button
+                                onClick={proceedToTest}
+                                disabled={!faceDetected}
+                                style={{
+                                    width: '100%',
+                                    padding: '18px',
+                                    fontSize: '18px',
+                                    fontWeight: 'bold',
+                                    background: faceDetected
+                                        ? 'linear-gradient(135deg, #1DB584 0%, #10b981 100%)'
+                                        : '#ccc',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '10px',
+                                    cursor: faceDetected ? 'pointer' : 'not-allowed',
+                                    transition: 'all 0.3s ease',
+                                    boxShadow: faceDetected ? '0 4px 12px rgba(29, 181, 132, 0.3)' : 'none',
+                                    opacity: faceDetected ? 1 : 0.6
+                                }}
+                            >
+                                {faceDetected ? '✅ Продолжить к тесту' : '⏳ Ожидание обнаружения лица...'}
+                            </button>
+
+                            {!cameraReady && (
+                                <p style={{
+                                    marginTop: '15px',
+                                    textAlign: 'center',
+                                    color: '#d32f2f',
+                                    fontSize: '14px'
+                                }}>
+                                    Если камера не работает, проверьте разрешения браузера и обновите страницу
+                                </p>
+                            )}
                         </div>
                     </div>
                 );
