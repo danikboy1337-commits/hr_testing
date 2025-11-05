@@ -911,7 +911,7 @@
                 }
             };
 
-            // Monitor fullscreen changes
+            // Monitor fullscreen changes and enforce fullscreen requirement
             useEffect(() => {
                 const handleFullscreenChange = () => {
                     const isCurrentlyFullscreen = !!(
@@ -944,6 +944,32 @@
                     document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
                     document.removeEventListener('msfullscreenchange', handleFullscreenChange);
                 };
+            }, [selfAssessmentSubmitted, showCameraSetup, completed, isPaused, pauseReason]);
+
+            // Continuous fullscreen enforcement - check every second
+            useEffect(() => {
+                if (!selfAssessmentSubmitted || showCameraSetup || completed) return;
+
+                const fullscreenEnforcementInterval = setInterval(() => {
+                    const isCurrentlyFullscreen = !!(
+                        document.fullscreenElement ||
+                        document.webkitFullscreenElement ||
+                        document.msFullscreenElement
+                    );
+
+                    // Force pause if not in fullscreen
+                    if (!isCurrentlyFullscreen && !isPaused) {
+                        console.log('🚫 Fullscreen enforcement: forcing pause');
+                        setIsPaused(true);
+                        setPauseReason('fullscreen');
+                    } else if (!isCurrentlyFullscreen && isPaused && pauseReason !== 'fullscreen') {
+                        // Override other pause reasons if not in fullscreen
+                        console.log('🚫 Fullscreen enforcement: overriding pause reason');
+                        setPauseReason('fullscreen');
+                    }
+                }, 1000);
+
+                return () => clearInterval(fullscreenEnforcementInterval);
             }, [selfAssessmentSubmitted, showCameraSetup, completed, isPaused, pauseReason]);
 
             useEffect(() => {
@@ -1323,8 +1349,8 @@
                 console.log('👤 Starting face verification...');
 
                 let detectionCount = 0;
-                let phoneDetectionFrames = 0; // Track consecutive frames with phone detected
-                const PHONE_DETECTION_THRESHOLD = 2; // Require detection in 2 consecutive frames
+                let phoneDetectionFrames = 0; // Track frames with phone detected (not necessarily consecutive)
+                const PHONE_DETECTION_THRESHOLD = 1; // Require detection in just 1 frame for immediate response
 
                 verificationInterval = setInterval(async () => {
                     const videoElement = document.getElementById('setupCameraVideo') || document.getElementById('cameraVideo');
@@ -1396,60 +1422,25 @@
                         }
 
                         // Detect objects (phone detection with improved sensitivity)
-                        let phoneDetectedThisFrame = false;
+                        let phoneDetected = false;
                         if (cocoSsdModel && !isInSetupMode) {
                             try {
                                 const objectPredictions = await cocoSsdModel.detect(videoElement);
 
-                                // Log all detections for debugging
-                                if (objectPredictions.length > 0) {
-                                    console.log('🔍 Objects detected:', objectPredictions.map(p => `${p.class} (${(p.score * 100).toFixed(1)}%)`).join(', '));
-                                }
-
-                                // Check for phone-like objects with lower confidence threshold
-                                // COCO-SSD may misclassify phones as: remote, mouse, keyboard, book
-                                const phoneRelatedClasses = ['cell phone', 'remote', 'mouse', 'keyboard'];
-
-                                phoneDetectedThisFrame = objectPredictions.some(pred => {
-                                    // Lower threshold for 'cell phone' class
-                                    if (pred.class === 'cell phone' && pred.score > 0.3) {
-                                        console.log(`📱 Phone detected! Confidence: ${(pred.score * 100).toFixed(1)}%`);
+                                // Check for cell phone with lower threshold for better detection
+                                phoneDetected = objectPredictions.some(pred => {
+                                    // Lower threshold: 0.25 for better detection of phone backs
+                                    if (pred.class === 'cell phone' && pred.score > 0.25) {
+                                        console.log(`📱 Phone detected! Class: ${pred.class}, Confidence: ${(pred.score * 100).toFixed(1)}%`);
                                         return true;
                                     }
-
-                                    // Higher threshold for related objects that might be phones
-                                    if (phoneRelatedClasses.includes(pred.class) && pred.score > 0.6) {
-                                        // Check if object is phone-sized (width/height ratio and size)
-                                        const width = pred.bbox[2];
-                                        const height = pred.bbox[3];
-                                        const aspectRatio = Math.max(width, height) / Math.min(width, height);
-                                        const area = width * height;
-
-                                        // Phone-like characteristics: aspect ratio 1.5-2.5, reasonable size
-                                        if (aspectRatio > 1.5 && aspectRatio < 2.5 && area > 2000 && area < 50000) {
-                                            console.log(`📱 Possible phone detected as "${pred.class}"! Confidence: ${(pred.score * 100).toFixed(1)}%, Aspect: ${aspectRatio.toFixed(2)}`);
-                                            return true;
-                                        }
-                                    }
-
                                     return false;
                                 });
-
-                                // Multi-frame confirmation to reduce false positives
-                                if (phoneDetectedThisFrame) {
-                                    phoneDetectionFrames++;
-                                    console.log(`📱 Phone detection count: ${phoneDetectionFrames}/${PHONE_DETECTION_THRESHOLD}`);
-                                } else {
-                                    phoneDetectionFrames = 0; // Reset counter if not detected
-                                }
 
                             } catch (error) {
                                 console.error('❌ Phone detection error:', error);
                             }
                         }
-
-                        // Only consider phone "detected" if seen in multiple consecutive frames
-                        const phoneDetected = phoneDetectionFrames >= PHONE_DETECTION_THRESHOLD;
 
                         // During camera setup (before test starts)
                         if (isInSetupMode) {
