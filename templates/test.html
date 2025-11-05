@@ -1609,6 +1609,97 @@
                                     }}
                                 />
 
+                                {/* Person Silhouette Overlay for Alignment */}
+                                <svg
+                                    style={{
+                                        position: 'absolute',
+                                        top: 0,
+                                        left: 0,
+                                        width: '100%',
+                                        height: '100%',
+                                        pointerEvents: 'none',
+                                        zIndex: 1
+                                    }}
+                                    viewBox="0 0 640 480"
+                                    preserveAspectRatio="xMidYMid meet"
+                                >
+                                    {/* Semi-transparent background overlay */}
+                                    <rect
+                                        x="0"
+                                        y="0"
+                                        width="640"
+                                        height="480"
+                                        fill="rgba(0, 0, 0, 0.3)"
+                                    />
+
+                                    {/* Clear area for face/body */}
+                                    <ellipse
+                                        cx="320"
+                                        cy="160"
+                                        rx="90"
+                                        ry="110"
+                                        fill="transparent"
+                                        stroke={faceDetected ? '#1DB584' : '#ff9800'}
+                                        strokeWidth="3"
+                                        strokeDasharray="8,5"
+                                    />
+
+                                    {/* Shoulders guideline */}
+                                    <path
+                                        d="M 200 270 Q 320 250 440 270"
+                                        fill="transparent"
+                                        stroke={faceDetected ? '#1DB584' : '#ff9800'}
+                                        strokeWidth="3"
+                                        strokeDasharray="8,5"
+                                    />
+
+                                    {/* Center alignment line */}
+                                    <line
+                                        x1="320"
+                                        y1="60"
+                                        x2="320"
+                                        y2="300"
+                                        stroke={faceDetected ? '#1DB584' : '#ff9800'}
+                                        strokeWidth="1"
+                                        strokeDasharray="4,4"
+                                        opacity="0.5"
+                                    />
+
+                                    {/* Alignment text */}
+                                    <text
+                                        x="320"
+                                        y="350"
+                                        fontSize="18"
+                                        fontWeight="bold"
+                                        fill="white"
+                                        textAnchor="middle"
+                                        style={{
+                                            textShadow: '2px 2px 4px rgba(0,0,0,0.8)'
+                                        }}
+                                    >
+                                        {faceDetected ? '✓ Позиция правильная' : 'Расположитесь в рамке'}
+                                    </text>
+
+                                    {/* Corner guides */}
+                                    <g opacity="0.6">
+                                        {/* Top-left corner */}
+                                        <line x1="210" y1="50" x2="250" y2="50" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="3"/>
+                                        <line x1="210" y1="50" x2="210" y2="90" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="3"/>
+
+                                        {/* Top-right corner */}
+                                        <line x1="430" y1="50" x2="390" y2="50" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="3"/>
+                                        <line x1="430" y1="50" x2="430" y2="90" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="3"/>
+
+                                        {/* Bottom-left corner */}
+                                        <line x1="210" y1="280" x2="250" y2="280" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="3"/>
+                                        <line x1="210" y1="280" x2="210" y2="240" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="3"/>
+
+                                        {/* Bottom-right corner */}
+                                        <line x1="430" y1="280" x2="390" y2="280" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="3"/>
+                                        <line x1="430" y1="280" x2="430" y2="240" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="3"/>
+                                    </g>
+                                </svg>
+
                                 {/* Overlay with face detection indicator */}
                                 <div style={{
                                     position: 'absolute',
@@ -1626,7 +1717,8 @@
                                     alignItems: 'center',
                                     justifyContent: 'center',
                                     gap: '10px',
-                                    transition: 'background 0.3s ease'
+                                    transition: 'background 0.3s ease',
+                                    zIndex: 2
                                 }}>
                                     <span style={{fontSize: '24px'}}>
                                         {faceDetected ? '✅' : cameraReady ? '⚠️' : '⏳'}
@@ -1663,11 +1755,12 @@
                                     marginLeft: '20px',
                                     listStyle: 'disc'
                                 }}>
+                                    <li><strong>Расположитесь внутри направляющей рамки</strong> - выровняйте голову и плечи по контуру</li>
                                     <li>Убедитесь, что ваше лицо хорошо освещено</li>
-                                    <li>Расположитесь в центре кадра</li>
+                                    <li>Используйте центральную линию для выравнивания</li>
                                     <li>Сохраняйте комфортное расстояние от камеры (40-60 см)</li>
                                     <li>Уберите посторонние предметы из кадра</li>
-                                    <li>Дождитесь появления зеленой рамки (✅ Лицо обнаружено)</li>
+                                    <li>Дождитесь, пока рамка станет <strong style={{color: '#1DB584'}}>зеленой</strong> (✅ Позиция правильная)</li>
                                 </ul>
                             </div>
 
