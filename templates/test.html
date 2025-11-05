@@ -12,6 +12,7 @@
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7/dist/blazeface.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-landmarks-detection@1.0.2/dist/face-landmarks-detection.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -526,6 +527,7 @@
         // =====================================================
         let blazefaceModel = null;
         let faceLandmarksDetector = null;
+        let cocoSsdModel = null;  // For object detection (phone detection)
         let proctoringInterval = null;
         let proctoringEnabled = false;
         let currentUserTestId = null;
@@ -553,6 +555,10 @@
                     }
                 );
                 console.log('✅ FaceMesh model loaded');
+
+                // Load COCO-SSD for object detection (phone detection)
+                cocoSsdModel = await cocoSsd.load();
+                console.log('✅ COCO-SSD model loaded (object detection)');
 
                 return true;
             } catch (error) {
@@ -1282,13 +1288,13 @@
                     }
 
                     // Load AI models if not already loaded
-                    if (!blazefaceModel || !faceLandmarksDetector) {
-                        setCameraVerificationMessage('Загрузка моделей распознавания лиц...');
+                    if (!blazefaceModel || !faceLandmarksDetector || !cocoSsdModel) {
+                        setCameraVerificationMessage('Загрузка моделей распознавания...');
                         console.log('🤖 Loading AI models...');
                         const loaded = await loadAIModels();
                         if (!loaded) {
                             console.error('❌ Models failed to load');
-                            setCameraVerificationMessage('⚠️ Ошибка загрузки моделей. Камера работает, но проверка лица недоступна.');
+                            setCameraVerificationMessage('⚠️ Ошибка загрузки моделей. Камера работает, но проверка недоступна.');
                             setCameraReady(true); // Still allow proceeding if models fail
                             setFaceDetected(true); // Allow proceeding even without face detection
                             return;
@@ -1387,6 +1393,24 @@
                             }
                         }
 
+                        // Detect objects (phone detection)
+                        let phoneDetected = false;
+                        if (cocoSsdModel && !isInSetupMode) {
+                            try {
+                                const objectPredictions = await cocoSsdModel.detect(videoElement);
+                                // Check for cell phone in detected objects
+                                phoneDetected = objectPredictions.some(pred =>
+                                    pred.class === 'cell phone' && pred.score > 0.5
+                                );
+
+                                if (phoneDetected) {
+                                    console.log('📱 Phone detected in frame!');
+                                }
+                            } catch (error) {
+                                console.error('❌ Phone detection error:', error);
+                            }
+                        }
+
                         // During camera setup (before test starts)
                         if (isInSetupMode) {
                             console.log('📸 In setup mode');
@@ -1400,7 +1424,7 @@
                                 setCameraVerificationMessage('⚠️ Лицо не обнаружено. Пожалуйста, расположитесь перед камерой.');
                             }
                         }
-                        // During test - auto-pause/resume based on face count and boundaries
+                        // During test - auto-pause/resume based on face count, boundaries, and phone detection
                         else {
                             console.log('🧪 In test mode');
                             if (numFaces === 0) {
@@ -1418,9 +1442,14 @@
                                 console.log('⚠️ Face outside boundaries - pausing test');
                                 setIsPaused(true);
                                 setPauseReason('out_of_bounds');
+                            } else if (phoneDetected) {
+                                // Phone detected - pause test
+                                console.log('⚠️ Phone detected - pausing test');
+                                setIsPaused(true);
+                                setPauseReason('phone_detected');
                             } else {
-                                // Exactly 1 face within bounds - resume if paused due to detection issues
-                                console.log('✅ Single face detected within bounds - OK');
+                                // Exactly 1 face within bounds, no phone - resume if paused due to detection issues
+                                console.log('✅ Single face detected within bounds, no violations - OK');
                                 setIsPaused(false);
                                 setPauseReason('');
                             }
@@ -2168,7 +2197,8 @@
                                 <div style={{fontSize: '80px', marginBottom: '20px'}}>
                                     {pauseReason === 'no_face' ? '👤' :
                                      pauseReason === 'multiple_faces' ? '👥' :
-                                     pauseReason === 'out_of_bounds' ? '📍' : '🖥️'}
+                                     pauseReason === 'out_of_bounds' ? '📍' :
+                                     pauseReason === 'phone_detected' ? '📱' : '🖥️'}
                                 </div>
                                 <h2 style={{
                                     color: '#ff9800',
@@ -2203,6 +2233,13 @@
                                             <strong>Вы вышли за границы контура</strong><br />
                                             Вернитесь в обозначенную область силуэта.<br />
                                             Тест возобновится, когда вы окажетесь внутри рамки.
+                                        </>
+                                    )}
+                                    {pauseReason === 'phone_detected' && (
+                                        <>
+                                            <strong>Обнаружен телефон</strong><br />
+                                            Уберите телефон из кадра.<br />
+                                            Тест автоматически возобновится, когда телефон не будет виден.
                                         </>
                                     )}
                                     {pauseReason === 'fullscreen' && (
