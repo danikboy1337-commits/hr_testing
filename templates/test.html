@@ -1345,6 +1345,48 @@
                         // Check if we're in camera setup mode by looking for the setup video element
                         const isInSetupMode = document.getElementById('setupCameraVideo') !== null;
 
+                        // Check boundaries (silhouette frame in 640x480 viewBox)
+                        // Boundaries: x: 180-460, y: 95-440 (with 20px margin)
+                        let isWithinBounds = true;
+                        if (numFaces > 0 && predictions[0]) {
+                            const face = predictions[0];
+                            const videoWidth = videoElement.videoWidth || 640;
+                            const videoHeight = videoElement.videoHeight || 480;
+
+                            // Get face bounding box [x1, y1, x2, y2]
+                            const [x1, y1, x2, y2] = face.topLeft.concat(face.bottomRight);
+
+                            // Calculate face center and dimensions
+                            const faceCenterX = (x1 + x2) / 2;
+                            const faceCenterY = (y1 + y2) / 2;
+                            const faceWidth = Math.abs(x2 - x1);
+                            const faceHeight = Math.abs(y2 - y1);
+
+                            // Convert to 640x480 coordinate system
+                            const normalizedX = (faceCenterX / videoWidth) * 640;
+                            const normalizedY = (faceCenterY / videoHeight) * 480;
+
+                            // Define silhouette boundaries (with margin for tolerance)
+                            const bounds = {
+                                left: 200,    // 180 + 20px margin
+                                right: 440,   // 460 - 20px margin
+                                top: 115,     // 95 + 20px margin
+                                bottom: 420   // 440 - 20px margin
+                            };
+
+                            // Check if face is within boundaries
+                            isWithinBounds = (
+                                normalizedX >= bounds.left &&
+                                normalizedX <= bounds.right &&
+                                normalizedY >= bounds.top &&
+                                normalizedY <= bounds.bottom
+                            );
+
+                            if (!isInSetupMode) {
+                                console.log(`📍 Face position: (${normalizedX.toFixed(0)}, ${normalizedY.toFixed(0)}) - Within bounds: ${isWithinBounds}`);
+                            }
+                        }
+
                         // During camera setup (before test starts)
                         if (isInSetupMode) {
                             console.log('📸 In setup mode');
@@ -1358,7 +1400,7 @@
                                 setCameraVerificationMessage('⚠️ Лицо не обнаружено. Пожалуйста, расположитесь перед камерой.');
                             }
                         }
-                        // During test - auto-pause/resume based on face count
+                        // During test - auto-pause/resume based on face count and boundaries
                         else {
                             console.log('🧪 In test mode');
                             if (numFaces === 0) {
@@ -1371,9 +1413,14 @@
                                 console.log(`⚠️ ${numFaces} faces detected - pausing test`);
                                 setIsPaused(true);
                                 setPauseReason('multiple_faces');
+                            } else if (!isWithinBounds) {
+                                // Face outside silhouette boundaries - pause test
+                                console.log('⚠️ Face outside boundaries - pausing test');
+                                setIsPaused(true);
+                                setPauseReason('out_of_bounds');
                             } else {
-                                // Exactly 1 face - resume if paused due to face issues
-                                console.log('✅ Single face detected - OK');
+                                // Exactly 1 face within bounds - resume if paused due to detection issues
+                                console.log('✅ Single face detected within bounds - OK');
                                 setIsPaused(false);
                                 setPauseReason('');
                             }
@@ -1632,12 +1679,12 @@
                                         fill="rgba(0, 0, 0, 0.4)"
                                     />
 
-                                    {/* Human Silhouette - Clear outline */}
+                                    {/* Human Silhouette - Clear outline - Positioned below center */}
                                     <g>
                                         {/* Head */}
                                         <ellipse
                                             cx="320"
-                                            cy="140"
+                                            cy="190"
                                             rx="70"
                                             ry="85"
                                             fill="none"
@@ -1648,7 +1695,7 @@
 
                                         {/* Neck */}
                                         <path
-                                            d="M 280 215 L 280 245 M 360 215 L 360 245"
+                                            d="M 280 265 L 280 295 M 360 265 L 360 295"
                                             fill="none"
                                             stroke={faceDetected ? '#1DB584' : '#ff9800'}
                                             strokeWidth="4"
@@ -1657,14 +1704,14 @@
                                         {/* Shoulders and Upper Torso - Complete outline */}
                                         <path
                                             d="
-                                                M 280 245
-                                                L 220 265
-                                                Q 200 275 190 290
-                                                L 190 380
-                                                L 450 380
-                                                L 450 290
-                                                Q 440 275 420 265
-                                                L 360 245
+                                                M 280 295
+                                                L 220 315
+                                                Q 200 325 190 340
+                                                L 190 430
+                                                L 450 430
+                                                L 450 340
+                                                Q 440 325 420 315
+                                                L 360 295
                                             "
                                             fill="none"
                                             stroke={faceDetected ? '#1DB584' : '#ff9800'}
@@ -1673,7 +1720,7 @@
 
                                         {/* Inner torso details for depth */}
                                         <path
-                                            d="M 280 245 Q 320 260 360 245"
+                                            d="M 280 295 Q 320 310 360 295"
                                             fill="none"
                                             stroke={faceDetected ? '#1DB584' : '#ff9800'}
                                             strokeWidth="2"
@@ -1683,17 +1730,17 @@
                                         {/* Shoulder definition lines */}
                                         <line
                                             x1="280"
-                                            y1="245"
+                                            y1="295"
                                             x2="220"
-                                            y2="265"
+                                            y2="315"
                                             stroke={faceDetected ? '#1DB584' : '#ff9800'}
                                             strokeWidth="3"
                                         />
                                         <line
                                             x1="360"
-                                            y1="245"
+                                            y1="295"
                                             x2="420"
-                                            y2="265"
+                                            y2="315"
                                             stroke={faceDetected ? '#1DB584' : '#ff9800'}
                                             strokeWidth="3"
                                         />
@@ -1702,9 +1749,9 @@
                                     {/* Center alignment line */}
                                     <line
                                         x1="320"
-                                        y1="50"
+                                        y1="100"
                                         x2="320"
-                                        y2="390"
+                                        y2="440"
                                         stroke={faceDetected ? '#1DB584' : '#ff9800'}
                                         strokeWidth="2"
                                         strokeDasharray="10,5"
@@ -1714,9 +1761,9 @@
                                     {/* Horizontal alignment guides */}
                                     <line
                                         x1="240"
-                                        y1="140"
+                                        y1="190"
                                         x2="400"
-                                        y2="140"
+                                        y2="190"
                                         stroke={faceDetected ? '#1DB584' : '#ff9800'}
                                         strokeWidth="1"
                                         strokeDasharray="5,5"
@@ -1726,7 +1773,7 @@
                                     {/* Alignment text */}
                                     <text
                                         x="320"
-                                        y="420"
+                                        y="460"
                                         fontSize="20"
                                         fontWeight="bold"
                                         fill="white"
@@ -1741,20 +1788,20 @@
                                     {/* Corner frame guides */}
                                     <g opacity="0.7">
                                         {/* Top-left corner */}
-                                        <line x1="180" y1="45" x2="230" y2="45" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
-                                        <line x1="180" y1="45" x2="180" y2="95" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
+                                        <line x1="180" y1="95" x2="230" y2="95" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
+                                        <line x1="180" y1="95" x2="180" y2="145" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
 
                                         {/* Top-right corner */}
-                                        <line x1="460" y1="45" x2="410" y2="45" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
-                                        <line x1="460" y1="45" x2="460" y2="95" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
+                                        <line x1="460" y1="95" x2="410" y2="95" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
+                                        <line x1="460" y1="95" x2="460" y2="145" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
 
                                         {/* Bottom-left corner */}
-                                        <line x1="180" y1="390" x2="230" y2="390" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
-                                        <line x1="180" y1="390" x2="180" y2="340" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
+                                        <line x1="180" y1="440" x2="230" y2="440" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
+                                        <line x1="180" y1="440" x2="180" y2="390" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
 
                                         {/* Bottom-right corner */}
-                                        <line x1="460" y1="390" x2="410" y2="390" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
-                                        <line x1="460" y1="390" x2="460" y2="340" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
+                                        <line x1="460" y1="440" x2="410" y2="440" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
+                                        <line x1="460" y1="440" x2="460" y2="390" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
                                     </g>
                                 </svg>
 
@@ -2119,7 +2166,9 @@
                                 border: '3px solid #ff9800'
                             }}>
                                 <div style={{fontSize: '80px', marginBottom: '20px'}}>
-                                    {pauseReason === 'no_face' ? '👤' : pauseReason === 'multiple_faces' ? '👥' : '🖥️'}
+                                    {pauseReason === 'no_face' ? '👤' :
+                                     pauseReason === 'multiple_faces' ? '👥' :
+                                     pauseReason === 'out_of_bounds' ? '📍' : '🖥️'}
                                 </div>
                                 <h2 style={{
                                     color: '#ff9800',
@@ -2147,6 +2196,13 @@
                                             <strong>Обнаружено несколько человек</strong><br />
                                             В кадре должен находиться только один участник.<br />
                                             Тест возобновится, когда останется один человек.
+                                        </>
+                                    )}
+                                    {pauseReason === 'out_of_bounds' && (
+                                        <>
+                                            <strong>Вы вышли за границы контура</strong><br />
+                                            Вернитесь в обозначенную область силуэта.<br />
+                                            Тест возобновится, когда вы окажетесь внутри рамки.
                                         </>
                                     )}
                                     {pauseReason === 'fullscreen' && (
