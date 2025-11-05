@@ -1629,74 +1629,132 @@
                                         y="0"
                                         width="640"
                                         height="480"
-                                        fill="rgba(0, 0, 0, 0.3)"
+                                        fill="rgba(0, 0, 0, 0.4)"
                                     />
 
-                                    {/* Clear area for face/body */}
-                                    <ellipse
-                                        cx="320"
-                                        cy="160"
-                                        rx="90"
-                                        ry="110"
-                                        fill="transparent"
-                                        stroke={faceDetected ? '#1DB584' : '#ff9800'}
-                                        strokeWidth="3"
-                                        strokeDasharray="8,5"
-                                    />
+                                    {/* Human Silhouette - Clear outline */}
+                                    <g>
+                                        {/* Head */}
+                                        <ellipse
+                                            cx="320"
+                                            cy="140"
+                                            rx="70"
+                                            ry="85"
+                                            fill="none"
+                                            stroke={faceDetected ? '#1DB584' : '#ff9800'}
+                                            strokeWidth="4"
+                                            strokeDasharray="none"
+                                        />
 
-                                    {/* Shoulders guideline */}
-                                    <path
-                                        d="M 200 270 Q 320 250 440 270"
-                                        fill="transparent"
-                                        stroke={faceDetected ? '#1DB584' : '#ff9800'}
-                                        strokeWidth="3"
-                                        strokeDasharray="8,5"
-                                    />
+                                        {/* Neck */}
+                                        <path
+                                            d="M 280 215 L 280 245 M 360 215 L 360 245"
+                                            fill="none"
+                                            stroke={faceDetected ? '#1DB584' : '#ff9800'}
+                                            strokeWidth="4"
+                                        />
+
+                                        {/* Shoulders and Upper Torso - Complete outline */}
+                                        <path
+                                            d="
+                                                M 280 245
+                                                L 220 265
+                                                Q 200 275 190 290
+                                                L 190 380
+                                                L 450 380
+                                                L 450 290
+                                                Q 440 275 420 265
+                                                L 360 245
+                                            "
+                                            fill="none"
+                                            stroke={faceDetected ? '#1DB584' : '#ff9800'}
+                                            strokeWidth="4"
+                                        />
+
+                                        {/* Inner torso details for depth */}
+                                        <path
+                                            d="M 280 245 Q 320 260 360 245"
+                                            fill="none"
+                                            stroke={faceDetected ? '#1DB584' : '#ff9800'}
+                                            strokeWidth="2"
+                                            opacity="0.5"
+                                        />
+
+                                        {/* Shoulder definition lines */}
+                                        <line
+                                            x1="280"
+                                            y1="245"
+                                            x2="220"
+                                            y2="265"
+                                            stroke={faceDetected ? '#1DB584' : '#ff9800'}
+                                            strokeWidth="3"
+                                        />
+                                        <line
+                                            x1="360"
+                                            y1="245"
+                                            x2="420"
+                                            y2="265"
+                                            stroke={faceDetected ? '#1DB584' : '#ff9800'}
+                                            strokeWidth="3"
+                                        />
+                                    </g>
 
                                     {/* Center alignment line */}
                                     <line
                                         x1="320"
-                                        y1="60"
+                                        y1="50"
                                         x2="320"
-                                        y2="300"
+                                        y2="390"
+                                        stroke={faceDetected ? '#1DB584' : '#ff9800'}
+                                        strokeWidth="2"
+                                        strokeDasharray="10,5"
+                                        opacity="0.6"
+                                    />
+
+                                    {/* Horizontal alignment guides */}
+                                    <line
+                                        x1="240"
+                                        y1="140"
+                                        x2="400"
+                                        y2="140"
                                         stroke={faceDetected ? '#1DB584' : '#ff9800'}
                                         strokeWidth="1"
-                                        strokeDasharray="4,4"
-                                        opacity="0.5"
+                                        strokeDasharray="5,5"
+                                        opacity="0.4"
                                     />
 
                                     {/* Alignment text */}
                                     <text
                                         x="320"
-                                        y="350"
-                                        fontSize="18"
+                                        y="420"
+                                        fontSize="20"
                                         fontWeight="bold"
                                         fill="white"
                                         textAnchor="middle"
                                         style={{
-                                            textShadow: '2px 2px 4px rgba(0,0,0,0.8)'
+                                            textShadow: '2px 2px 6px rgba(0,0,0,0.9)'
                                         }}
                                     >
-                                        {faceDetected ? '✓ Позиция правильная' : 'Расположитесь в рамке'}
+                                        {faceDetected ? '✓ Позиция правильная' : 'Расположитесь по контуру'}
                                     </text>
 
-                                    {/* Corner guides */}
-                                    <g opacity="0.6">
+                                    {/* Corner frame guides */}
+                                    <g opacity="0.7">
                                         {/* Top-left corner */}
-                                        <line x1="210" y1="50" x2="250" y2="50" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="3"/>
-                                        <line x1="210" y1="50" x2="210" y2="90" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="3"/>
+                                        <line x1="180" y1="45" x2="230" y2="45" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
+                                        <line x1="180" y1="45" x2="180" y2="95" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
 
                                         {/* Top-right corner */}
-                                        <line x1="430" y1="50" x2="390" y2="50" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="3"/>
-                                        <line x1="430" y1="50" x2="430" y2="90" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="3"/>
+                                        <line x1="460" y1="45" x2="410" y2="45" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
+                                        <line x1="460" y1="45" x2="460" y2="95" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
 
                                         {/* Bottom-left corner */}
-                                        <line x1="210" y1="280" x2="250" y2="280" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="3"/>
-                                        <line x1="210" y1="280" x2="210" y2="240" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="3"/>
+                                        <line x1="180" y1="390" x2="230" y2="390" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
+                                        <line x1="180" y1="390" x2="180" y2="340" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
 
                                         {/* Bottom-right corner */}
-                                        <line x1="430" y1="280" x2="390" y2="280" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="3"/>
-                                        <line x1="430" y1="280" x2="430" y2="240" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="3"/>
+                                        <line x1="460" y1="390" x2="410" y2="390" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
+                                        <line x1="460" y1="390" x2="460" y2="340" stroke={faceDetected ? '#1DB584' : '#ff9800'} strokeWidth="4"/>
                                     </g>
                                 </svg>
 
@@ -1755,12 +1813,12 @@
                                     marginLeft: '20px',
                                     listStyle: 'disc'
                                 }}>
-                                    <li><strong>Расположитесь внутри направляющей рамки</strong> - выровняйте голову и плечи по контуру</li>
-                                    <li>Убедитесь, что ваше лицо хорошо освещено</li>
-                                    <li>Используйте центральную линию для выравнивания</li>
-                                    <li>Сохраняйте комфортное расстояние от камеры (40-60 см)</li>
-                                    <li>Уберите посторонние предметы из кадра</li>
-                                    <li>Дождитесь, пока рамка станет <strong style={{color: '#1DB584'}}>зеленой</strong> (✅ Позиция правильная)</li>
+                                    <li><strong>Выровняйте голову по овальному контуру</strong> - ваше лицо должно находиться внутри овала</li>
+                                    <li><strong>Совместите плечи с направляющими линиями</strong> - используйте линии шеи и плеч для точного позиционирования</li>
+                                    <li>Используйте центральную вертикальную линию для выравнивания по центру</li>
+                                    <li>Убедитесь, что торс находится внутри прямоугольного контура</li>
+                                    <li>Сохраняйте расстояние от камеры ~50 см для правильного масштаба</li>
+                                    <li>Дождитесь, пока контур станет <strong style={{color: '#1DB584'}}>зеленым</strong> (✅ Позиция правильная)</li>
                                 </ul>
                             </div>
 
