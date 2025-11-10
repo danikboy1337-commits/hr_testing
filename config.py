@@ -19,5 +19,16 @@ ORG_NAME = "Халык банк"
 ORG_LOGO = "/static/images/halyk_logo.png"
 ORG_PRIMARY_COLOR = "#1DB584"
 
+# Security
+HR_PASSWORD = os.getenv("HR_PASSWORD", "159753")  # Default for backward compatibility
+
 RECAPTCHA_SITE_KEY = os.getenv("RECAPTCHA_SITE_KEY", "")
 RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY", "")
+
+# Test Configuration
+TEST_TIME_LIMIT_MINUTES = int(os.getenv("TEST_TIME_LIMIT_MINUTES"))
+
+# Weighted Score Formula Weights
+TEST_WEIGHT = float(os.getenv("TEST_WEIGHT"))
+MANAGER_WEIGHT = float(os.getenv("MANAGER_WEIGHT"))
+SELF_WEIGHT = float(os.getenv("SELF_WEIGHT"))

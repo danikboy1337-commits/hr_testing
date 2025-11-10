@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 import sys
 import os
+import json
 
 # Мониторинг
 import psutil
@@ -779,7 +780,8 @@ async def get_test_questions(user_test_id: int, current_user: dict = Depends(get
             "status": "success",
             "questions": all_questions,
             "competencies": list(competencies_dict.values()),
-            "progress": progress
+            "progress": progress,
+            "time_limit_minutes": config.TEST_TIME_LIMIT_MINUTES
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1025,6 +1027,178 @@ async def get_results(user_test_id: int, current_user: dict = Depends(get_curren
         raise HTTPException(status_code=500, detail=str(e))
 
 # =====================================================
+# API - AI PROCTORING
+# =====================================================
+class ProctoringEventSubmit(BaseModel):
+    user_test_id: int
+    event_type: str
+    severity: str = "medium"
+    details: Optional[dict] = None
+
+@app.post("/api/proctoring/event")
+async def log_proctoring_event(
+    event: ProctoringEventSubmit,
+    current_user: dict = Depends(get_current_user)
+):
+    """Log a proctoring event detected by AI"""
+    user_id = current_user["user_id"]
+
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Verify test belongs to user
+                await cur.execute(
+                    "SELECT user_id FROM user_specialization_tests WHERE id = %s",
+                    (event.user_test_id,)
+                )
+                test_data = await cur.fetchone()
+
+                if not test_data:
+                    raise HTTPException(status_code=404, detail="Test not found")
+                if test_data[0] != user_id:
+                    raise HTTPException(status_code=403, detail="Access denied")
+
+                # Insert proctoring event
+                # Convert details dict to JSON string for JSONB column
+                details_json = None
+                if event.details is not None:
+                    details_json = json.dumps(event.details)
+
+                await cur.execute("""
+                    INSERT INTO proctoring_events
+                    (user_test_id, user_id, event_type, severity, details)
+                    VALUES (%s, %s, %s, %s, %s::jsonb)
+                    RETURNING id
+                """, (
+                    event.user_test_id,
+                    user_id,
+                    event.event_type,
+                    event.severity,
+                    details_json
+                ))
+
+                event_id = (await cur.fetchone())[0]
+
+                return {
+                    "status": "success",
+                    "event_id": event_id,
+                    "message": "Proctoring event logged"
+                }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/proctoring/events/{user_test_id}")
+async def get_proctoring_events(
+    user_test_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get all proctoring events for a test"""
+    user_id = current_user["user_id"]
+
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Verify test belongs to user
+                await cur.execute(
+                    "SELECT user_id FROM user_specialization_tests WHERE id = %s",
+                    (user_test_id,)
+                )
+                test_data = await cur.fetchone()
+
+                if not test_data:
+                    raise HTTPException(status_code=404, detail="Test not found")
+                if test_data[0] != user_id:
+                    raise HTTPException(status_code=403, detail="Access denied")
+
+                # Get events
+                await cur.execute("""
+                    SELECT id, event_type, severity, details, created_at
+                    FROM proctoring_events
+                    WHERE user_test_id = %s
+                    ORDER BY created_at DESC
+                """, (user_test_id,))
+
+                rows = await cur.fetchall()
+                events = [
+                    {
+                        "id": row[0],
+                        "event_type": row[1],
+                        "severity": row[2],
+                        "details": row[3],
+                        "created_at": row[4].isoformat() if row[4] else None
+                    }
+                    for row in rows
+                ]
+
+                return {
+                    "status": "success",
+                    "events": events,
+                    "count": len(events)
+                }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/proctoring/summary/{user_test_id}")
+async def get_proctoring_summary(
+    user_test_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get proctoring summary statistics for a test"""
+    user_id = current_user["user_id"]
+
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Verify test belongs to user
+                await cur.execute(
+                    "SELECT user_id, suspicious_events_count, proctoring_risk_level FROM user_specialization_tests WHERE id = %s",
+                    (user_test_id,)
+                )
+                test_data = await cur.fetchone()
+
+                if not test_data:
+                    raise HTTPException(status_code=404, detail="Test not found")
+                if test_data[0] != user_id:
+                    raise HTTPException(status_code=403, detail="Access denied")
+
+                # Get event breakdown
+                await cur.execute("""
+                    SELECT
+                        event_type,
+                        COUNT(*) as count,
+                        severity
+                    FROM proctoring_events
+                    WHERE user_test_id = %s
+                    GROUP BY event_type, severity
+                    ORDER BY count DESC
+                """, (user_test_id,))
+
+                breakdown_rows = await cur.fetchall()
+                breakdown = [
+                    {
+                        "event_type": row[0],
+                        "count": row[1],
+                        "severity": row[2]
+                    }
+                    for row in breakdown_rows
+                ]
+
+                return {
+                    "status": "success",
+                    "total_events": test_data[1],
+                    "risk_level": test_data[2],
+                    "breakdown": breakdown
+                }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# =====================================================
 # API - ДАШБОРД
 # =====================================================
 @app.get("/api/dashboard/stats")
@@ -1097,7 +1271,6 @@ async def get_dashboard_stats():
 # =====================================================
 # API - HR PANEL
 # =====================================================
-HR_PASSWORD = "159753"
 
 # =====================================================
 # API - HR LOGIN (ОБНОВЛЕННЫЙ!)
@@ -1105,7 +1278,7 @@ HR_PASSWORD = "159753"
 @app.post("/api/hr/login")
 async def hr_login(request: Request, password: str, response: Response):
     """Вход в HR панель - устанавливает cookie"""
-    if password == HR_PASSWORD:
+    if password == config.HR_PASSWORD:
         token = create_access_token(user_id=0, phone="hr_admin")
         
         # Устанавливаем httpOnly cookie (защита от XSS)
@@ -1201,10 +1374,13 @@ async def get_hr_results(
                 p.name as profile,
                 ust.score,
                 ust.max_score,
-                ROUND((ust.score::numeric / ust.max_score::numeric * 100), 2) as percentage,
                 CASE
-                    WHEN (ust.score::numeric / ust.max_score::numeric * 100) >= 67 THEN 'Senior'
-                    WHEN (ust.score::numeric / ust.max_score::numeric * 100) >= 34 THEN 'Middle'
+                    WHEN ust.max_score > 0 THEN ROUND((ust.score::numeric / ust.max_score::numeric * 100), 2)
+                    ELSE 0
+                END as percentage,
+                CASE
+                    WHEN ust.max_score > 0 AND (ust.score::numeric / ust.max_score::numeric * 100) >= 67 THEN 'Senior'
+                    WHEN ust.max_score > 0 AND (ust.score::numeric / ust.max_score::numeric * 100) >= 34 THEN 'Middle'
                     ELSE 'Junior'
                 END as level,
                 ust.started_at,
@@ -1220,7 +1396,17 @@ async def get_hr_results(
                     FROM competency_self_assessments csa
                     JOIN competencies c ON csa.competency_id = c.id
                     WHERE csa.user_test_id = ust.id
-                ) as self_assessments
+                ) as self_assessments,
+                (
+                    SELECT AVG(mcr.rating)
+                    FROM manager_competency_ratings mcr
+                    WHERE mcr.user_test_id = ust.id
+                ) as avg_manager_rating,
+                (
+                    SELECT AVG(csa.self_rating)
+                    FROM competency_self_assessments csa
+                    WHERE csa.user_test_id = ust.id
+                ) as avg_self_rating
             FROM user_specialization_tests ust
             JOIN users u ON ust.user_id = u.id
             JOIN specializations s ON ust.specialization_id = s.id
@@ -1272,11 +1458,40 @@ async def get_hr_results(
                     # Convert duration to minutes
                     if result['duration_seconds']:
                         result['duration_minutes'] = round(result['duration_seconds'] / 60, 1)
+
+                    # Calculate weighted score using the formula:
+                    # weighted_score = ((test_score * TEST_WEIGHT) + (mgr_rating * MANAGER_WEIGHT) + (self_rtg * SELF_WEIGHT)) / (max_score + 10 + 10) * 100
+                    # Where: max_score = max test score, 10 = max manager rating, 10 = max self-assessment rating
+                    # Weights are configurable via .env file
+
+                    test_score = result.get('score') or 0
+                    max_score = result.get('max_score') or 24  # Default to 24 if not available
+                    manager_rating = result.get('avg_manager_rating') or 0
+                    self_rating = result.get('avg_self_rating') or 0
+
+                    # Handle None/NULL values safely
+                    test_score = float(test_score) if test_score is not None else 0
+                    max_score = float(max_score) if max_score is not None and max_score > 0 else 24
+                    mgr_rating = float(manager_rating) if manager_rating is not None else 0
+                    self_rtg = float(self_rating) if self_rating is not None else 0
+
+                    # Apply the weighted formula using configurable weights
+                    weighted_score = (
+                        (test_score * config.TEST_WEIGHT) +
+                        (mgr_rating * config.MANAGER_WEIGHT) +
+                        (self_rtg * config.SELF_WEIGHT)
+                    ) / (max_score + 10 + 10) * 100
+
+                    result['weighted_score'] = round(weighted_score, 2)
+
                     results.append(result)
 
                 return {"status": "success", "results": results, "count": len(results)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"ERROR in /api/hr/results: {error_details}")
+        raise HTTPException(status_code=500, detail=f"{str(e)} | {error_details}")
 
 @app.get("/api/hr/results/stats")
 async def get_hr_results_stats():
@@ -1369,7 +1584,7 @@ async def get_hr_result_detail(test_id: int):
                     JOIN users u ON ust.user_id = u.id
                     JOIN specializations s ON ust.specialization_id = s.id
                     JOIN profiles p ON s.profile_id = p.id
-                    WHERE ust.id = $1
+                    WHERE ust.id = %s
                 """, (test_id,))
                 test_info = await cur.fetchone()
 
@@ -1391,7 +1606,7 @@ async def get_hr_result_detail(test_id: int):
                     JOIN questions q ON ta.question_id = q.id
                     JOIN topics t ON q.topic_id = t.id
                     JOIN competencies c ON t.competency_id = c.id
-                    WHERE ta.user_test_id = $1
+                    WHERE ta.user_test_id = %s
                     ORDER BY c.id, t.id, q.level
                 """, (test_id,))
                 answers = await cur.fetchall()
@@ -1400,7 +1615,7 @@ async def get_hr_result_detail(test_id: int):
                 await cur.execute("""
                     SELECT recommendation_text, created_at
                     FROM ai_recommendations
-                    WHERE user_test_id = $1
+                    WHERE user_test_id = %s
                 """, (test_id,))
                 ai_rec = await cur.fetchone()
 
@@ -1473,7 +1688,8 @@ async def get_manager_results(
     manager_id = manager.get("user_id")
 
     try:
-        query = """
+        # Use configurable weights from .env file
+        query = f"""
             SELECT
                 ust.id as test_id,
                 u.id as user_id,
@@ -1517,17 +1733,18 @@ async def get_manager_results(
                     WHERE csa.user_test_id = ust.id
                 ) as avg_self_rating,
                 ROUND(
-                    (ust.score::numeric / ust.max_score::numeric * 100 * 0.5) +
-                    COALESCE((
-                        SELECT AVG(mcr.rating) / 10.0 * 100 * 0.4
+                    ((ust.score * {config.TEST_WEIGHT}) +
+                     COALESCE((
+                        SELECT AVG(mcr.rating) * {config.MANAGER_WEIGHT}
                         FROM manager_competency_ratings mcr
                         WHERE mcr.user_test_id = ust.id AND mcr.manager_id = %s
                     ), 0) +
-                    COALESCE((
-                        SELECT AVG(csa.self_rating) / 10.0 * 100 * 0.1
+                     COALESCE((
+                        SELECT AVG(csa.self_rating) * {config.SELF_WEIGHT}
                         FROM competency_self_assessments csa
                         WHERE csa.user_test_id = ust.id
-                    ), 0),
+                    ), 0))
+                    / (ust.max_score + 10 + 10) * 100,
                     2
                 ) as weighted_score
             FROM user_specialization_tests ust
@@ -1877,12 +2094,12 @@ async def get_employee_completed_tests(employee_id: int, manager: dict = Depends
                 if not emp or emp[0] != department_id:
                     raise HTTPException(status_code=403, detail="Employee not in your department")
 
-                # Get completed tests with competencies and self-assessments
+                # Get all tests with competencies and self-assessments (including incomplete)
                 await cur.execute("""
                     SELECT
                         ust.id as test_id,
-                        ust.specialization,
-                        ust.profile,
+                        s.name as specialization,
+                        p.name as profile,
                         ust.completed_at,
                         ust.score,
                         ust.max_score,
@@ -1891,11 +2108,13 @@ async def get_employee_completed_tests(employee_id: int, manager: dict = Depends
                         csa.self_rating,
                         mcr.rating as manager_rating
                     FROM user_specialization_tests ust
+                    JOIN specializations s ON s.id = ust.specialization_id
+                    JOIN profiles p ON p.id = s.profile_id
                     JOIN competencies c ON c.specialization_id = ust.specialization_id
                     LEFT JOIN competency_self_assessments csa ON csa.user_test_id = ust.id AND csa.competency_id = c.id
                     LEFT JOIN manager_competency_ratings mcr ON mcr.user_test_id = ust.id AND mcr.competency_id = c.id AND mcr.manager_id = %s
-                    WHERE ust.user_id = %s AND ust.status = 'completed'
-                    ORDER BY ust.completed_at DESC, c.name
+                    WHERE ust.user_id = %s
+                    ORDER BY ust.started_at DESC, c.name
                 """, (manager_id, employee_id))
 
                 rows = await cur.fetchall()
@@ -1986,14 +2205,92 @@ async def submit_competency_ratings(data: CompetencyRatingSubmit, manager: dict 
 
 @app.get("/api/hr/ratings")
 async def get_all_ratings(hr_user: dict = Depends(verify_hr_cookie)):
-    """DEPRECATED: Old API - Use HR results panel instead
+    """Get all competency-based ratings from managers across all departments"""
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Get all competency ratings with employee, manager, and test info
+                await cur.execute("""
+                    SELECT
+                        mcr.id,
+                        mcr.employee_id,
+                        emp.name as employee_name,
+                        emp.surname as employee_surname,
+                        emp.phone as employee_phone,
+                        emp.company as employee_company,
+                        emp.job_title as employee_job_title,
+                        d_emp.name as employee_department,
+                        mcr.manager_id,
+                        mgr.name as manager_name,
+                        mgr.surname as manager_surname,
+                        d_mgr.name as manager_department,
+                        mcr.user_test_id,
+                        s.name as specialization,
+                        p.name as profile,
+                        c.name as competency_name,
+                        mcr.competency_id,
+                        mcr.rating,
+                        mcr.created_at,
+                        mcr.updated_at,
+                        ust.score as test_score,
+                        ust.max_score as test_max_score,
+                        ust.completed_at,
+                        csa.self_rating
+                    FROM manager_competency_ratings mcr
+                    JOIN users emp ON mcr.employee_id = emp.id
+                    JOIN users mgr ON mcr.manager_id = mgr.id
+                    LEFT JOIN departments d_emp ON emp.department_id = d_emp.id
+                    LEFT JOIN departments d_mgr ON mgr.department_id = d_mgr.id
+                    JOIN user_specialization_tests ust ON mcr.user_test_id = ust.id
+                    JOIN specializations s ON ust.specialization_id = s.id
+                    JOIN profiles p ON s.profile_id = p.id
+                    JOIN competencies c ON mcr.competency_id = c.id
+                    LEFT JOIN competency_self_assessments csa
+                        ON csa.user_test_id = ust.id
+                        AND csa.competency_id = mcr.competency_id
+                    ORDER BY mcr.created_at DESC
+                """)
 
-    Returns empty data for backward compatibility"""
-    return {
-        "status": "success",
-        "ratings": [],
-        "message": "This API is deprecated. Use the new competency-based rating system."
-    }
+                rows = await cur.fetchall()
+
+                ratings = []
+                for row in rows:
+                    test_percentage = (row[20] / row[21] * 100) if row[21] > 0 else 0
+
+                    ratings.append({
+                        "id": row[0],
+                        "employee_id": row[1],
+                        "employee_name": f"{row[2]} {row[3]}",
+                        "employee_phone": row[4],
+                        "employee_company": row[5],
+                        "employee_job_title": row[6],
+                        "employee_department": row[7],
+                        "manager_id": row[8],
+                        "manager_name": f"{row[9]} {row[10]}",
+                        "manager_department": row[11],
+                        "user_test_id": row[12],
+                        "specialization": row[13],
+                        "profile": row[14],
+                        "competency_name": row[15],
+                        "competency_id": row[16],
+                        "rating": row[17],
+                        "created_at": row[18].isoformat() if row[18] else None,
+                        "updated_at": row[19].isoformat() if row[19] else None,
+                        "test_score": row[20],
+                        "test_max_score": row[21],
+                        "test_percentage": round(test_percentage, 1),
+                        "test_completed_at": row[22].isoformat() if row[22] else None,
+                        "self_rating": row[23]
+                    })
+
+                return {
+                    "status": "success",
+                    "ratings": ratings,
+                    "total": len(ratings)
+                }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # =====================================================
 # API - МОНИТОРИНГ
@@ -2283,6 +2580,100 @@ async def setup_hr_requirements():
             "message": f"Migration failed: {str(e)}",
             "error_type": type(e).__name__,
             "traceback": traceback.format_exc()
+        }
+
+@app.get("/api/setup-ai-proctoring")
+async def setup_ai_proctoring():
+    """
+    Setup AI Proctoring System
+    - Creates proctoring_events table
+    - Adds proctoring columns to user_specialization_tests
+    - Creates proctoring_summary view
+    - Sets up automatic triggers
+
+    Visit this URL once to enable AI proctoring: /api/setup-ai-proctoring
+    """
+    try:
+        async with get_db_connection() as conn:
+            async with conn.cursor() as cur:
+                # Read and execute migration SQL
+                migration_file = 'db/migrations/add_proctoring_events.sql'
+
+                with open(migration_file, 'r') as f:
+                    migration_sql = f.read()
+
+                # Execute migration
+                await cur.execute(migration_sql)
+                await conn.commit()
+
+                # Verify table was created
+                await cur.execute("""
+                    SELECT column_name, data_type
+                    FROM information_schema.columns
+                    WHERE table_name = 'proctoring_events'
+                    ORDER BY ordinal_position
+                """)
+                columns = await cur.fetchall()
+
+                # Check if proctoring columns added to tests table
+                await cur.execute("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'user_specialization_tests'
+                    AND column_name IN ('proctoring_enabled', 'suspicious_events_count', 'proctoring_risk_level')
+                """)
+                test_columns = await cur.fetchall()
+
+                return {
+                    "status": "success",
+                    "message": "✅ AI Proctoring System enabled successfully!",
+                    "features_enabled": [
+                        "🎥 Live camera streaming",
+                        "👤 Face detection (BlazeFace)",
+                        "👁️ Eye gaze tracking (FaceMesh)",
+                        "🚫 Multiple person detection",
+                        "📑 Tab switching detection",
+                        "🪟 Window focus tracking",
+                        "🖱️ Right-click prevention",
+                        "📊 Real-time event logging",
+                        "⚠️ Automatic risk level calculation"
+                    ],
+                    "database_changes": {
+                        "proctoring_events_table": f"Created with {len(columns)} columns",
+                        "test_table_columns_added": len(test_columns),
+                        "views_created": ["proctoring_summary"],
+                        "triggers_created": ["trigger_update_suspicious_events"]
+                    },
+                    "event_types_tracked": [
+                        "no_face_detected (high)",
+                        "multiple_faces (critical)",
+                        "looking_away (medium)",
+                        "tab_switched (high)",
+                        "window_blur (medium)",
+                        "context_menu (low)"
+                    ],
+                    "next_steps": [
+                        "1. Start a test - AI proctoring will activate automatically",
+                        "2. Face detection runs every 2 seconds",
+                        "3. Events are logged to proctoring_events table",
+                        "4. View events via /api/proctoring/events/{test_id}",
+                        "5. Check risk level via /api/proctoring/summary/{test_id}"
+                    ],
+                    "api_endpoints": [
+                        "POST /api/proctoring/event - Log proctoring event",
+                        "GET /api/proctoring/events/{test_id} - Get all events",
+                        "GET /api/proctoring/summary/{test_id} - Get summary stats"
+                    ]
+                }
+
+    except Exception as e:
+        import traceback
+        return {
+            "status": "error",
+            "message": f"Setup failed: {str(e)}",
+            "error_type": type(e).__name__,
+            "traceback": traceback.format_exc(),
+            "help": "Make sure db/migrations/add_proctoring_events.sql exists"
         }
 
 # =====================================================

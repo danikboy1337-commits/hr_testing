@@ -143,7 +143,7 @@
         .results-table {
             width: 100%;
             border-collapse: collapse;
-            min-width: 1000px;
+            min-width: 1400px;
         }
 
         .results-table thead {
@@ -300,16 +300,18 @@
                             <th>Сотрудник</th>
                             <th>Должность</th>
                             <th>Отдел</th>
+                            <th>Специализация</th>
+                            <th>Компетенция</th>
                             <th>Руководитель</th>
-                            <th>Оценка</th>
-                            <th>Комментарий</th>
+                            <th>Оценка (1-10)</th>
+                            <th>Самооценка</th>
+                            <th>Тест</th>
                             <th>Дата оценки</th>
-                            <th>Обновлено</th>
                         </tr>
                     </thead>
                     <tbody id="resultsBody">
                         <tr>
-                            <td colspan="8" class="loading">Загрузка...</td>
+                            <td colspan="10" class="loading">Загрузка...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -340,7 +342,7 @@
                 console.error('Error loading ratings:', error);
                 document.getElementById('resultsBody').innerHTML = `
                     <tr>
-                        <td colspan="8" class="empty-state">
+                        <td colspan="10" class="empty-state">
                             <div class="empty-state-icon">❌</div>
                             <div class="empty-state-text">Ошибка загрузки данных</div>
                         </td>
@@ -364,7 +366,7 @@
         }
 
         function populateFilters() {
-            const departments = new Set(allRatings.map(r => r.department).filter(Boolean));
+            const departments = new Set(allRatings.map(r => r.employee_department).filter(Boolean));
             const managers = new Set(allRatings.map(r => r.manager_name));
 
             const deptFilter = document.getElementById('filterDept');
@@ -391,7 +393,7 @@
             if (ratings.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="8" class="empty-state">
+                        <td colspan="10" class="empty-state">
                             <div class="empty-state-icon">📭</div>
                             <div class="empty-state-text">Нет оценок</div>
                         </td>
@@ -402,19 +404,34 @@
 
             tbody.innerHTML = ratings.map(r => {
                 const ratingClass = r.rating >= 8 ? 'rating-high' : r.rating >= 5 ? 'rating-medium' : 'rating-low';
-                const createdDate = new Date(r.created_at).toLocaleDateString('ru-RU');
-                const updatedDate = new Date(r.updated_at).toLocaleDateString('ru-RU');
+                const createdDate = new Date(r.created_at).toLocaleDateString('ru-RU', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric'
+                });
+
+                // Self rating display
+                const selfRatingHtml = r.self_rating
+                    ? `<span class="rating-badge rating-medium">${r.self_rating}/10</span>`
+                    : '<span style="color: #999;">-</span>';
+
+                // Test score display
+                const testScoreHtml = r.test_score !== null
+                    ? `<span class="rating-badge rating-medium" title="${r.test_score}/${r.test_max_score}">${r.test_percentage}%</span>`
+                    : '<span style="color: #999;">-</span>';
 
                 return `
                     <tr>
                         <td><strong>${r.employee_name}</strong></td>
-                        <td>${r.job_title || '-'}</td>
-                        <td>${r.department || '-'}</td>
+                        <td>${r.employee_job_title || '-'}</td>
+                        <td>${r.employee_department || '-'}</td>
+                        <td title="${r.profile}">${r.specialization}</td>
+                        <td><strong>${r.competency_name}</strong></td>
                         <td>${r.manager_name}</td>
                         <td><span class="rating-badge ${ratingClass}">${r.rating}/10</span></td>
-                        <td class="comment-cell" title="${r.comment || ''}">${r.comment || '-'}</td>
+                        <td>${selfRatingHtml}</td>
+                        <td>${testScoreHtml}</td>
                         <td>${createdDate}</td>
-                        <td>${updatedDate}</td>
                     </tr>
                 `;
             }).join('');
@@ -427,7 +444,7 @@
             const search = document.getElementById('filterSearch').value.toLowerCase();
 
             const filtered = allRatings.filter(r => {
-                if (dept && !r.department?.toLowerCase().includes(dept)) return false;
+                if (dept && !r.employee_department?.toLowerCase().includes(dept)) return false;
                 if (manager && !r.manager_name.toLowerCase().includes(manager)) return false;
                 if (minRating && r.rating < minRating) return false;
                 if (search && !r.employee_name.toLowerCase().includes(search)) return false;
