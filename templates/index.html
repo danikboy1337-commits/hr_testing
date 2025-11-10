@@ -4,15 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Halyk HR Тестирование компетенций</title>
-    <!-- reCAPTCHA -->
-    <script src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoad" async defer></script>
-    <script>
-        var recaptchaLoaded = false;
-        function onRecaptchaLoad() {
-            recaptchaLoaded = true;
-            console.log('reCAPTCHA loaded!');
-        }
-    </script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -232,11 +223,14 @@
             padding: 40px;
             color: #999;
         }
-        /* Добавь стиль для капчи */
-        .recaptcha-container {
-            margin: 20px 0;
-            display: flex;
-            justify-content: center;
+        .info-box {
+            background: #e3f2fd;
+            border-left: 4px solid #1DB584;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            font-size: 14px;
+            color: #333;
         }
     </style>
 </head>
@@ -247,55 +241,19 @@
         const { useState, useEffect } = React;
 
         function App() {
-            const [step, setStep] = useState('phone');
-            const [phone, setPhone] = useState('+');
-            const [phoneError, setPhoneError] = useState('');
-            const [formData, setFormData] = useState({
-                name: '', surname: '', phone: '', company: '', job_title: '', role: 'employee', department_id: ''
-            });
+            const [step, setStep] = useState('login');
+            const [employeeId, setEmployeeId] = useState('');
+            const [password, setPassword] = useState('');
+            const [loginError, setLoginError] = useState('');
             const [profiles, setProfiles] = useState([]);
             const [selectedProfile, setSelectedProfile] = useState(null);
             const [specializations, setSpecializations] = useState([]);
             const [myTests, setMyTests] = useState([]);
             const [loading, setLoading] = useState(false);
             const [userName, setUserName] = useState('');
-            const [recaptchaSiteKey, setRecaptchaSiteKey] = useState('');
-            const [departments, setDepartments] = useState([]);
+            const [ldapEnabled, setLdapEnabled] = useState(false);
 
-            // Fetch reCAPTCHA site key and departments from backend
-            useEffect(() => {
-                fetch('/api/config')
-                    .then(res => res.json())
-                    .then(data => {
-                        setRecaptchaSiteKey(data.recaptcha_site_key);
-                    })
-                    .catch(err => console.error('Failed to load config:', err));
-
-                // Load departments
-                fetch('/api/departments')
-                    .then(res => res.json())
-                    .then(data => {
-                        if (data.departments) {
-                            setDepartments(data.departments);
-                        }
-                    })
-                    .catch(err => console.error('Failed to load departments:', err));
-            }, []);
-
-            // Render reCAPTCHA with dynamic site key
-            useEffect(() => {
-                if (step === 'register' && window.recaptchaLoaded && typeof grecaptcha !== 'undefined' && recaptchaSiteKey) {
-                    setTimeout(() => {
-                        const widget = document.getElementById('recaptcha-widget');
-                        if (widget && !widget.hasChildNodes()) {
-                            grecaptcha.render('recaptcha-widget', {
-                                'sitekey': recaptchaSiteKey
-                            });
-                        }
-                    }, 100);
-                }
-            }, [step, recaptchaSiteKey]);
-
+            // Check for existing token on page load
             useEffect(() => {
                 const token = sessionStorage.getItem('halyk_token');
                 if (token) {
@@ -306,137 +264,53 @@
                 }
             }, []);
 
-            // ===== ВАЛИДАЦИЯ ТЕЛЕФОНА =====
-            const handlePhoneChange = (e) => {
-                let value = e.target.value;
-                
-                // Всегда начинается с +
-                if (!value.startsWith('+')) {
-                    value = '+' + value.replace(/\+/g, '');
-                }
-                
-                // Только + и цифры
-                value = '+' + value.slice(1).replace(/\D/g, '');
-                
-                // Максимум 12 символов (+7 + 10 цифр)
-                if (value.length <= 12) {
-                    setPhone(value);
-                    setPhoneError('');
-                }
-            };
-
-            const validatePhone = (phoneValue) => {
-                // Проверка формата: +77001234567 (ровно 12 символов)
-                if (phoneValue.length !== 12) {
-                    return 'Телефон должен содержать 12 символов';
-                }
-                
-                if (!/^\+\d{11}$/.test(phoneValue)) {
-                    return 'Неверный формат телефона';
-                }
-                
-                return '';
-            };
-
-            const handlePhoneSubmit = async (e) => {
+            // ===== LDAP LOGIN =====
+            const handleLogin = async (e) => {
                 e.preventDefault();
-                
-                // Валидация перед отправкой
-                const error = validatePhone(phone);
-                if (error) {
-                    setPhoneError(error);
+
+                if (!employeeId.trim() || !password.trim()) {
+                    setLoginError('Пожалуйста, заполните все поля');
                     return;
                 }
-                
+
                 setLoading(true);
+                setLoginError('');
 
                 try {
                     const response = await fetch('/api/login', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ phone })
-                    });
-
-                    const data = await response.json();
-                    
-                    if (data.status === 'found') {
-                        sessionStorage.setItem('halyk_token', data.token);
-                        sessionStorage.setItem('halyk_user_id', data.user_id);
-                        sessionStorage.setItem('halyk_user_name', data.name + ' ' + data.surname);
-                        sessionStorage.setItem('halyk_user_role', data.role || 'employee');
-                        sessionStorage.setItem('halyk_user_department', data.department_id || '');
-
-                        // Redirect to panel selection page
-                        window.location.href = '/panels';
-                    } else {
-                        setFormData({...formData, phone});
-                        setStep('register');
-                    }
-                } catch (error) {
-                    alert('Ошибка входа: ' + error.message);
-                } finally {
-                    setLoading(false);
-                }
-            };
-
-
-            const handleRegister = async (e) => {
-                e.preventDefault();
-                
-                // Валидация телефона
-                const error = validatePhone(formData.phone);
-                if (error) {
-                    alert('Некорректный формат телефона: ' + error);
-                    return;
-                }
-                
-                // Ждем загрузки капчи
-                if (!window.recaptchaLoaded || typeof grecaptcha === 'undefined') {
-                    alert('Капча загружается, подождите 2 секунды');
-                    return;
-                }
-
-                // Проверка капчи
-                const recaptchaResponse = grecaptcha.getResponse();
-                if (!recaptchaResponse) {
-                    alert('Пожалуйста, подтвердите что вы не робот');
-                    return;
-                }
-                
-                setLoading(true);
-
-                try {
-                    const response = await fetch('/api/register', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            ...formData,
-                            department_id: parseInt(formData.department_id),
-                            recaptcha_token: recaptchaResponse
+                            employee_id: employeeId,
+                            password: password
                         })
                     });
 
                     const data = await response.json();
 
-                    if (response.status === 429) {
-                        alert('Слишком много попыток. Попробуйте позже.');
-                        grecaptcha.reset();
-                        return;
-                    }
-
                     if (data.status === 'success') {
+                        // Store user data
                         sessionStorage.setItem('halyk_token', data.token);
                         sessionStorage.setItem('halyk_user_id', data.user_id);
-                        sessionStorage.setItem('halyk_user_name', formData.name + ' ' + formData.surname);
-                        sessionStorage.setItem('halyk_user_role', data.role || formData.role);
-                        sessionStorage.setItem('halyk_user_department', formData.department_id);
+                        sessionStorage.setItem('halyk_user_name', data.name + (data.surname ? ' ' + data.surname : ''));
+                        sessionStorage.setItem('halyk_user_role', data.role || 'employee');
+                        sessionStorage.setItem('halyk_user_department', data.department_id || '');
+                        sessionStorage.setItem('halyk_employee_id', data.employee_id);
+
+                        // Store LDAP status
+                        setLdapEnabled(data.ldap_enabled);
 
                         // Redirect to panel selection page
                         window.location.href = '/panels';
+                    } else {
+                        setLoginError(data.detail || 'Ошибка входа');
                     }
                 } catch (error) {
-                    alert('Ошибка регистрации: ' + error.message);
-                    grecaptcha.reset();
+                    if (error.message) {
+                        setLoginError('Ошибка входа: ' + error.message);
+                    } else {
+                        setLoginError('Ошибка соединения с сервером');
+                    }
                 } finally {
                     setLoading(false);
                 }
@@ -531,11 +405,15 @@
                 sessionStorage.removeItem('halyk_token');
                 sessionStorage.removeItem('halyk_user_id');
                 sessionStorage.removeItem('halyk_user_name');
-                setStep('phone');
-                setPhone('+');
+                sessionStorage.removeItem('halyk_user_role');
+                sessionStorage.removeItem('halyk_user_department');
+                sessionStorage.removeItem('halyk_employee_id');
+                setStep('login');
+                setEmployeeId('');
+                setPassword('');
                 setUserName('');
                 setMyTests([]);
-                setPhoneError('');
+                setLoginError('');
             };
 
             const getStatusText = (status) => {
@@ -562,117 +440,53 @@
                     </div>
 
                     <div className="content">
-                        {step === 'phone' && (
-                            <form onSubmit={handlePhoneSubmit}>
-                                <h2 style={{marginBottom: '30px', color: '#333'}}>Вход по телефону</h2>
-                                
-                                <div className="form-group">
-                                    <label>Номер телефона *</label>
-                                    <input
-                                        type="tel"
-                                        value={phone}
-                                        onChange={handlePhoneChange}
-                                        maxLength={12}
-                                        required
-                                        placeholder="+77001234567"
-                                        className={phoneError ? 'error' : ''}
-                                    />
-                                    {phoneError ? (
-                                        <div className="form-error">{phoneError}</div>
-                                    ) : (
-                                        <div className="form-hint">Формат: +77001234567 (12 символов)</div>
-                                    )}
+                        {step === 'login' && (
+                            <form onSubmit={handleLogin}>
+                                <h2 style={{marginBottom: '30px', color: '#333'}}>🔐 Вход для сотрудников</h2>
+
+                                <div className="info-box">
+                                    <strong>🏢 Корпоративная аутентификация</strong><br/>
+                                    Используйте ваш Employee ID и пароль Active Directory
                                 </div>
+
+                                <div className="form-group">
+                                    <label>Employee ID *</label>
+                                    <input
+                                        type="text"
+                                        value={employeeId}
+                                        onChange={(e) => setEmployeeId(e.target.value)}
+                                        required
+                                        placeholder="Например: 00058215"
+                                        autoFocus
+                                    />
+                                    <div className="form-hint">Ваш корпоративный идентификатор</div>
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Пароль *</label>
+                                    <input
+                                        type="password"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        required
+                                        placeholder="Пароль Active Directory"
+                                    />
+                                    <div className="form-hint">Ваш пароль из корпоративной сети</div>
+                                </div>
+
+                                {loginError && (
+                                    <div className="form-error" style={{marginBottom: '15px'}}>
+                                        ⚠️ {loginError}
+                                    </div>
+                                )}
 
                                 <button type="submit" className="btn" disabled={loading}>
-                                    {loading ? 'Проверка...' : 'Продолжить'}
+                                    {loading ? '🔄 Вход...' : '✅ Войти'}
                                 </button>
-                            </form>
-                        )}
 
-                        {step === 'register' && (
-                            <form onSubmit={handleRegister}>
-                                <h2 style={{marginBottom: '30px', color: '#333'}}>Регистрация</h2>
-                                <p style={{marginBottom: '20px', color: '#666'}}>
-                                    Телефон {formData.phone} не найден. Заполните данные:
-                                </p>
-                                
-                                <div className="form-group">
-                                    <label>Имя *</label>
-                                    <input
-                                        type="text"
-                                        value={formData.name}
-                                        onChange={(e) => setFormData({...formData, name: e.target.value})}
-                                        required
-                                    />
+                                <div style={{marginTop: '20px', padding: '12px', background: '#f5f5f5', borderRadius: '8px', fontSize: '13px', color: '#666'}}>
+                                    <strong>ℹ️ Примечание:</strong> Доступ разрешен только авторизованным сотрудникам компании. Ваш Employee ID должен быть в списке разрешенных пользователей.
                                 </div>
-
-                                <div className="form-group">
-                                    <label>Фамилия *</label>
-                                    <input
-                                        type="text"
-                                        value={formData.surname}
-                                        onChange={(e) => setFormData({...formData, surname: e.target.value})}
-                                        required
-                                    />
-                                </div>
-
-                                <div className="form-group">
-                                    <label>Компания</label>
-                                    <input
-                                        type="text"
-                                        value={formData.company}
-                                        onChange={(e) => setFormData({...formData, company: e.target.value})}
-                                    />
-                                </div>
-
-                                <div className="form-group">
-                                    <label>Должность</label>
-                                    <input
-                                        type="text"
-                                        value={formData.job_title}
-                                        onChange={(e) => setFormData({...formData, job_title: e.target.value})}
-                                    />
-                                </div>
-
-                                <div className="form-group">
-                                    <label>Роль *</label>
-                                    <select
-                                        value={formData.role}
-                                        onChange={(e) => setFormData({...formData, role: e.target.value})}
-                                        required
-                                    >
-                                        <option value="employee">Сотрудник</option>
-                                        <option value="hr">HR специалист</option>
-                                        <option value="manager">Руководитель</option>
-                                    </select>
-                                </div>
-
-                                <div className="form-group">
-                                    <label>Отдел *</label>
-                                    <select
-                                        value={formData.department_id}
-                                        onChange={(e) => setFormData({...formData, department_id: e.target.value})}
-                                        required
-                                    >
-                                        <option value="">Выберите отдел</option>
-                                        {departments.map(dept => (
-                                            <option key={dept.id} value={dept.id}>{dept.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                {/* КАПЧА */}
-                                <div className="recaptcha-container">
-                                    <div id="recaptcha-widget"></div>
-                                </div>
-
-                                <button type="submit" className="btn" disabled={loading}>
-                                    {loading ? 'Регистрация...' : 'Зарегистрироваться'}
-                                </button>
-                                <button type="button" className="btn btn-secondary" onClick={() => setStep('phone')}>
-                                    Назад
-                                </button>
                             </form>
                         )}
 

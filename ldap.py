@@ -6,53 +6,53 @@ from ldap3 import Server, Connection, ALL, NTLM, Tls
 from fastapi import HTTPException, status
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-import os
+import config
 
 # Configure logging
 logging.basicConfig(
-    filename='login_history.log', 
+    filename='login_history.log',
     level=logging.INFO,
     format='%(asctime)s:%(levelname)s:%(message)s'
 )
 
-# JWT Configuration
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production")
+# JWT Configuration (using config from config.py)
+SECRET_KEY = config.JWT_SECRET_KEY
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 480  # 8 hours
 
-# LDAP Configuration
+# LDAP Configuration (from config.py with placeholders)
 LDAP_CONFIG = {
-    'domain': 'UNIVERSAL',                      
-    'host': 'xxxxxxxxx',            
-    'port': 389,                            
-    'base_dn': 'OU=xxxxxxxxx,DC=xxxxxxxxx,DC=xxxxxxxxx',      
-    'use_ssl': False,                        
-    'use_tls': False,                        
-    'timeout': 10,                            
+    'domain': config.LDAP_DOMAIN,
+    'host': config.LDAP_HOST,
+    'port': config.LDAP_PORT,
+    'base_dn': config.LDAP_BASE_DN,
+    'use_ssl': config.LDAP_USE_SSL,
+    'use_tls': config.LDAP_USE_TLS,
+    'timeout': config.LDAP_TIMEOUT,
 }
 
 def parse_permitted_users():
-    # Default permitted users (fallback)
+    # Default permitted users (fallback - PLACEHOLDERS, update in .env)
     default_users = {
-        '00058215': {
-            'name': 'Nadir',
+        'PLACEHOLDER_ID_1': {
+            'name': 'Placeholder User 1',
             'role': 'admin',
             'permissions': ['read', 'write', 'admin']
         },
-        '00037099': {
-            'name': 'Saltanat',
+        'PLACEHOLDER_ID_2': {
+            'name': 'Placeholder User 2',
             'role': 'admin',
             'permissions': ['read', 'write', 'admin']
         },
-        '00060673': {
-            'name': 'Meirim',
+        'PLACEHOLDER_ID_3': {
+            'name': 'Placeholder User 3',
             'role': 'admin',
             'permissions': ['read', 'write', 'admin']
         },
     }
-    
-    # Try to read from environment variable
-    users_env = os.getenv('PERMITTED_USERS', '')
+
+    # Try to read from config (which reads from environment variable)
+    users_env = config.PERMITTED_USERS_ENV
     
     if not users_env:
         logging.info("No PERMITTED_USERS environment variable found, using default users")
@@ -100,8 +100,16 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 def check_ldap_password(username: str, password: str) -> bool:
     """
     Authenticate user against LDAP server
-    Adapted from original Streamlit code
+
+    NOTE: If LDAP_ENABLED=False in config, this will bypass LDAP check
+    and accept any password for whitelisted users (for testing purposes only)
     """
+    # BYPASS MODE: If LDAP is not enabled, accept any password for testing
+    if not config.LDAP_ENABLED:
+        logging.warning(f"LDAP BYPASS MODE: User {username} authenticated without LDAP check (LDAP_ENABLED=False)")
+        return True  # Allow login without LDAP when disabled
+
+    # NORMAL MODE: Authenticate against LDAP server
     try:
         server = Server(
             LDAP_CONFIG['host'],
@@ -115,7 +123,7 @@ def check_ldap_password(username: str, password: str) -> bool:
             server.tls = tls_configuration
 
         user_dn = f"{LDAP_CONFIG['domain']}\\{username}"
-        
+
         logging.info(f"Attempting to bind with user DN: {user_dn}")
 
         conn = Connection(
@@ -123,7 +131,7 @@ def check_ldap_password(username: str, password: str) -> bool:
             user=user_dn,
             password=password,
             authentication=NTLM,
-           auto_bind=True
+            auto_bind=True
         )
 
         if conn.bind():
@@ -133,7 +141,7 @@ def check_ldap_password(username: str, password: str) -> bool:
         else:
             logging.error(f"Failed to authenticate user: {username}")
             return False
-            
+
     except Exception as e:
         logging.error(f"LDAP authentication error: {e}")
         return False
