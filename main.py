@@ -37,6 +37,20 @@ claude_client = anthropic.Anthropic(
 
 from auth import create_access_token, verify_token
 
+# LDAP Authentication (replaces phone-based auth)
+try:
+    from ldap import (
+        authenticate_user as ldap_authenticate_user,
+        create_access_token as ldap_create_token,
+        verify_token as ldap_verify_token
+    )
+    LDAP_AVAILABLE = True
+    print("✅ LDAP authentication module loaded successfully")
+except ImportError as e:
+    LDAP_AVAILABLE = False
+    print(f"⚠️  LDAP module not available: {e}")
+    print("   Install ldap3: pip install ldap3")
+
 
 # =====================================================
 # ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ДЛЯ МОНИТОРИНГА
@@ -73,6 +87,10 @@ class SelfAssessmentSubmit(BaseModel):
 
 class LoginRequest(BaseModel):
     phone: str
+
+class LDAPLoginRequest(BaseModel):
+    employee_id: str
+    password: str
 
 class SQLQuery(BaseModel):
     query: str
@@ -192,11 +210,13 @@ async def generate_ai_recommendation(user_test_id: int):
 # =====================================================
 @app.get("/api/config")
 async def get_public_config():
-    """Return public configuration like reCAPTCHA site key"""
+    """Return public configuration"""
     return {
         "recaptcha_site_key": config.RECAPTCHA_SITE_KEY,
         "org_name": config.ORG_NAME,
-        "org_logo": config.ORG_LOGO
+        "org_logo": config.ORG_LOGO,
+        "ldap_enabled": config.LDAP_ENABLED,
+        "auth_method": "ldap" if config.LDAP_ENABLED else "placeholder"
     }
 
 @app.get("/api/departments")
@@ -369,7 +389,18 @@ async def get_all_users(
 # =====================================================
 @app.get("/", response_class=HTMLResponse)
 async def home():
-    with open('templates/index.html', 'r', encoding='utf-8') as f:
+    """
+    Home page - now redirects to LDAP login
+    Old registration page deprecated in favor of LDAP authentication
+    """
+    # Redirect to LDAP login page
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/login", status_code=302)
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page():
+    """LDAP login page for company employees"""
+    with open('templates/login.html', 'r', encoding='utf-8') as f:
         return HTMLResponse(content=f.read())
 
 @app.get("/panels", response_class=HTMLResponse)
@@ -529,39 +560,94 @@ async def admin_page():
         return HTMLResponse(content=f.read())
 
 # =====================================================
-# API - АУТЕНТИФИКАЦИЯ ПОЛЬЗОВАТЕЛЕЙ
+# API - АУТЕНТИФИКАЦИЯ ПОЛЬЗОВАТЕЛЕЙ (LDAP-BASED)
 # =====================================================
+
 @app.post("/api/login")
-async def login(request: LoginRequest):
+async def ldap_login(request: LDAPLoginRequest):
+    """
+    LDAP-based authentication for company employees
+    Requires: employee_id (e.g., '00058215') and Active Directory password
+
+    NOTE: This endpoint now uses LDAP authentication instead of phone-based auth.
+    Configure LDAP settings in .env file to activate.
+    """
+    if not LDAP_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="LDAP authentication is not configured. Please install ldap3 and configure LDAP settings."
+        )
+
     try:
+        # Step 1: Authenticate against LDAP + whitelist
+        ldap_user_data = ldap_authenticate_user(request.employee_id, request.password)
+
+        # Step 2: Check if user exists in our HR database
         async with get_db_connection() as conn:
             async with conn.cursor() as cur:
+                # Look for user by employee_id (stored in phone field for now)
                 await cur.execute(
                     "SELECT id, name, surname, role, department_id FROM users WHERE phone = %s",
-                    (request.phone,)
+                    (request.employee_id,)
                 )
-                user = await cur.fetchone()
+                db_user = await cur.fetchone()
 
-                if user:
-                    token = create_access_token(
-                        user_id=user[0],
-                        phone=request.phone,
-                        role=user[3] or "employee",
-                        department_id=user[4]
-                    )
-                    return {
-                        "status": "found",
-                        "user_id": user[0],
-                        "name": user[1],
-                        "surname": user[2],
-                        "role": user[3] or "employee",
-                        "department_id": user[4],
-                        "token": token
-                    }
+                if db_user:
+                    # User exists in database
+                    user_id, db_name, db_surname, db_role, db_department_id = db_user
+
+                    # Update user info if needed (sync with LDAP)
+                    if db_name != ldap_user_data['name'] or db_role != ldap_user_data['role']:
+                        await cur.execute(
+                            "UPDATE users SET name = %s, role = %s WHERE id = %s",
+                            (ldap_user_data['name'], ldap_user_data['role'], user_id)
+                        )
+                        await conn.commit()
                 else:
-                    return {"status": "not_found"}
+                    # Auto-create user from LDAP data
+                    await cur.execute(
+                        """INSERT INTO users (name, surname, phone, company, job_title, role)
+                           VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+                        (
+                            ldap_user_data['name'],
+                            '',  # No surname in LDAP
+                            request.employee_id,  # Store employee_id in phone field
+                            'Halyk Bank',
+                            ldap_user_data['role'],
+                            ldap_user_data['role']
+                        )
+                    )
+                    user_id = (await cur.fetchone())[0]
+                    db_role = ldap_user_data['role']
+                    db_department_id = None
+                    await conn.commit()
+
+        # Step 3: Create JWT token (using existing token system)
+        token = create_access_token(
+            user_id=user_id,
+            phone=request.employee_id,  # employee_id instead of phone
+            role=ldap_user_data['role'],
+            department_id=db_department_id
+        )
+
+        return {
+            "status": "success",
+            "user_id": user_id,
+            "name": ldap_user_data['name'],
+            "employee_id": request.employee_id,
+            "role": ldap_user_data['role'],
+            "permissions": ldap_user_data['permissions'],
+            "token": token,
+            "auth_method": "ldap"
+        }
+
+    except HTTPException as e:
+        # Re-raise HTTP exceptions from LDAP module
+        raise e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import logging
+        logging.error(f"LDAP login error: {e}")
+        raise HTTPException(status_code=500, detail=f"Authentication error: {str(e)}")
 
 class UserRegister(BaseModel):
     name: str
@@ -575,54 +661,21 @@ class UserRegister(BaseModel):
 
 @app.post("/api/register")
 async def register_user(request: Request, user: UserRegister):
-    # Проверка капчи
-    async with httpx.AsyncClient() as client:
-        recaptcha_response = await client.post(
-            "https://www.google.com/recaptcha/api/siteverify",
-            data={
-                "secret": config.RECAPTCHA_SECRET_KEY,
-                "response": user.recaptcha_token,
-                "remoteip": request.client.host
-            }
-        )
+    """
+    DEPRECATED: Phone-based registration is disabled.
 
-        recaptcha_result = recaptcha_response.json()
+    The system now uses LDAP/Active Directory authentication.
+    Users are automatically created on first login if they are in the whitelist.
 
-        if not recaptcha_result.get("success"):
-            raise HTTPException(status_code=400, detail="Капча не пройдена")
-
-    # Validate role
-    if user.role not in ['employee', 'hr', 'manager']:
-        raise HTTPException(status_code=400, detail="Неверная роль")
-
-    # Обычная регистрация
-    try:
-        async with get_db_connection() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute("SELECT id FROM users WHERE phone = %s", (user.phone,))
-                if await cur.fetchone():
-                    raise HTTPException(status_code=400, detail="Телефон уже зарегистрирован")
-
-                await cur.execute(
-                    """INSERT INTO users (name, surname, phone, company, job_title, role, department_id)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
-                    (user.name, user.surname, user.phone, user.company, user.job_title, user.role, user.department_id)
-                )
-                user_id = (await cur.fetchone())[0]
-
-        token = create_access_token(
-            user_id=user_id,
-            phone=user.phone,
-            role=user.role,
-            department_id=user.department_id
-        )
-        return {"status": "success", "user_id": user_id, "token": token, "role": user.role}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Registration error: {e}")
-        raise HTTPException(status_code=500, detail="Ошибка регистрации")
+    To add new users:
+    1. Add their employee ID to PERMITTED_USERS environment variable
+    2. They will be auto-created on first LDAP login
+    """
+    raise HTTPException(
+        status_code=410,
+        detail="Registration endpoint is deprecated. System now uses LDAP authentication. "
+               "Users are automatically created on first login if whitelisted."
+    )
 
 # =====================================================
 # API - PROFILES & SPECIALIZATIONS
