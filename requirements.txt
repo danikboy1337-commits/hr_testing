@@ -10,8 +10,9 @@ python-multipart==0.0.9
 psycopg[pool,binary]==3.2.10
 sqlalchemy==2.0.35
 
-# AI API
-anthropic==0.39.0
+# AI API (OPTIONAL - not required, using rule-based recommendations)
+# Uncomment if you want to enable Claude AI for advanced recommendations:
+# anthropic==0.39.0
 
 # Utilities
 python-dotenv==1.0.1

@@ -23,17 +23,31 @@ from db.database import init_db_pool, close_db_pool, get_db_connection
 from db.utils import generate_test_topics, get_test_progress
 import config
 
-import anthropic
 import httpx
 
 print(f"RECAPTCHA_SECRET_KEY: {config.RECAPTCHA_SECRET_KEY}")
 
-# Инициализируем Claude client
-http_client = httpx.Client(timeout=30.0)
-claude_client = anthropic.Anthropic(
-    api_key=config.ANTHROPIC_API_KEY,
-    http_client=http_client
-)
+# Anthropic Claude AI (OPTIONAL - not required for core functionality)
+# Used for AI-powered recommendations (currently using rule-based fallback)
+try:
+    import anthropic
+    http_client = httpx.Client(timeout=30.0)
+    claude_client = anthropic.Anthropic(
+        api_key=config.ANTHROPIC_API_KEY,
+        http_client=http_client
+    )
+    ANTHROPIC_AVAILABLE = True
+    print("✅ Anthropic Claude AI client initialized")
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+    claude_client = None
+    print("⚠️  Anthropic not available (not required - using rule-based recommendations)")
+    print("   To enable: pip install anthropic and set ANTHROPIC_API_KEY")
+except Exception as e:
+    ANTHROPIC_AVAILABLE = False
+    claude_client = None
+    print(f"⚠️  Anthropic initialization failed: {e}")
+    print("   Using rule-based recommendations as fallback")
 
 from auth import create_access_token, verify_token
 
