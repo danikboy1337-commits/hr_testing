@@ -101,7 +101,21 @@ def check_ldap_password(username: str, password: str) -> bool:
     """
     Authenticate user against LDAP server
     Adapted from original Streamlit code
+
+    When LDAP_ENABLED=False, uses mock authentication for testing
+    Mock password: "test123" (accepts any username in permitted list)
     """
+    # Mock authentication when LDAP is disabled
+    if not config.LDAP_ENABLED:
+        logging.info(f"🧪 MOCK MODE: Authenticating {username} with password {'*' * len(password)}")
+        if password == "test123":
+            logging.info(f"✅ MOCK: Authentication successful for {username}")
+            return True
+        else:
+            logging.info(f"❌ MOCK: Authentication failed for {username} (use 'test123' as password)")
+            return False
+
+    # Real LDAP authentication
     try:
         server = Server(
             LDAP_CONFIG['host'],
@@ -115,7 +129,7 @@ def check_ldap_password(username: str, password: str) -> bool:
             server.tls = tls_configuration
 
         user_dn = f"{LDAP_CONFIG['domain']}\\{username}"
-        
+
         logging.info(f"Attempting to bind with user DN: {user_dn}")
 
         conn = Connection(
@@ -133,7 +147,7 @@ def check_ldap_password(username: str, password: str) -> bool:
         else:
             logging.error(f"Failed to authenticate user: {username}")
             return False
-            
+
     except Exception as e:
         logging.error(f"LDAP authentication error: {e}")
         return False
