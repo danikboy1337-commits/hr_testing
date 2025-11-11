@@ -34,7 +34,7 @@ DB_USER="hrapp"                  # Database user
 DB_PASSWORD=""                   # Database password (leave empty to use .pgpass)
 
 # Backup configuration
-BACKUP_DIR="/backup/hr_testing"  # Backup directory
+BACKUP_DIR="/home/ocds_mukhtar/00061221/backups"  # Backup directory
 RETENTION_DAYS=30                # Keep backups for 30 days
 LOG_FILE="/var/log/hr_testing/backup.log"
 

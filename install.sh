@@ -41,8 +41,8 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-APP_USER="hrapp"
-APP_DIR="/opt/hr_testing"
+APP_USER="ocds_mukhtar"
+APP_DIR="/home/ocds_mukhtar/00061221/hr_testing"
 LOG_DIR="/var/log/hr_testing"
 BACKUP_DIR="/backup/hr_testing"
 PYTHON_VERSION="3.11"

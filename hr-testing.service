@@ -20,20 +20,20 @@ Wants=postgresql.service
 
 [Service]
 Type=notify
-User=hrapp
-Group=hrapp
-WorkingDirectory=/opt/hr_testing
-Environment="PATH=/opt/hr_testing/venv/bin:/usr/local/bin:/usr/bin:/bin"
+User=ocds_mukhtar
+Group=ocds_mukhtar
+WorkingDirectory=/home/ocds_mukhtar/00061221/hr_testing
+Environment="PATH=/home/ocds_mukhtar/00061221/hr_testing/venv/bin:/usr/local/bin:/usr/bin:/bin"
 
 # Load environment variables from .env file
-EnvironmentFile=/opt/hr_testing/.env
+EnvironmentFile=/home/ocds_mukhtar/00061221/hr_testing/.env
 
 # Start application with Gunicorn + Uvicorn workers
 # Workers: 4 (adjust based on CPU cores and expected load)
 # Worker class: UvicornWorker (ASGI for FastAPI)
 # Bind: 0.0.0.0:8000 (accessible from all interfaces)
 # Timeout: 120 seconds (handles long-running requests)
-ExecStart=/opt/hr_testing/venv/bin/gunicorn main:app \
+ExecStart=/home/ocds_mukhtar/00061221/hr_testing/venv/bin/gunicorn main:app \
     --workers 4 \
     --worker-class uvicorn.workers.UvicornWorker \
     --bind 0.0.0.0:8000 \
@@ -51,7 +51,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/hr_testing /var/log/hr_testing
+ReadWritePaths=/home/ocds_mukhtar/00061221/hr_testing /var/log/hr_testing
 
 # Resource limits
 LimitNOFILE=65535

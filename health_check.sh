@@ -37,7 +37,7 @@ ALERT_EMAIL="admin@company.local"
 
 # Consecutive failures before taking action
 FAILURE_THRESHOLD=3
-FAILURE_COUNT_FILE="/tmp/hr_testing_health_failures"
+FAILURE_COUNT_FILE="/home/ocds_mukhtar/00061221/hr_testing_health_failures"
 
 # Colors for output
 RED='\033[0;31m'
