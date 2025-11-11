@@ -2,7 +2,7 @@
 import logging
 import datetime
 from typing import Optional, Dict, Any
-from ldap3 import Server, Connection, ALL, NTLM, Tls
+from ldap3 import Server, Connection, ALL, NTLM, SIMPLE, Tls
 from fastapi import HTTPException, status
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -128,29 +128,78 @@ def check_ldap_password(username: str, password: str) -> bool:
             tls_configuration = Tls(validate=False)  # ssl.CERT_NONE equivalent
             server.tls = tls_configuration
 
-        user_dn = f"{LDAP_CONFIG['domain']}\\{username}"
+        # Try multiple authentication formats for compatibility
+        # Format 1: username@DOMAIN (UPN format - most common for AD with SIMPLE auth)
+        user_dn_upn = f"{username}@{LDAP_CONFIG['domain']}"
+        # Format 2: DOMAIN\username (for NTLM - but may fail with MD4 error)
+        user_dn_ntlm = f"{LDAP_CONFIG['domain']}\\{username}"
 
-        logging.info(f"Attempting to bind with user DN: {user_dn}")
+        # Try SIMPLE authentication with UPN format (works with modern OpenSSL, no MD4 needed)
+        logging.info(f"Attempting SIMPLE authentication for user: {username}")
+        logging.info(f"Trying UPN format: {user_dn_upn}")
 
-        # Create connection without auto_bind to handle errors properly
-        conn = Connection(
-            server,
-            user=user_dn,
-            password=password,
-            authentication=NTLM,
-            auto_bind=False
-        )
+        try:
+            conn = Connection(
+                server,
+                user=user_dn_upn,
+                password=password,
+                authentication=SIMPLE,
+                auto_bind=False
+            )
 
-        # Explicitly attempt to bind
-        if not conn.bind():
-            logging.error(f"Failed to authenticate user: {username} - Bind returned False")
-            logging.error(f"Connection result: {conn.result}")
-            conn.unbind()
-            return False
+            if conn.bind():
+                logging.info(f"✅ Successfully authenticated user {username} using SIMPLE authentication (UPN format)")
+                conn.unbind()
+                return True
+            else:
+                logging.warning(f"SIMPLE authentication (UPN) failed for {username}: {conn.result}")
+        except Exception as e:
+            logging.warning(f"SIMPLE authentication (UPN) error for {username}: {e}")
 
-        logging.info(f"Successfully authenticated user: {username}")
-        conn.unbind()
-        return True
+        # Fallback: Try DOMAIN\username with SIMPLE
+        logging.info(f"Trying DOMAIN\\username format: {user_dn_ntlm}")
+        try:
+            conn = Connection(
+                server,
+                user=user_dn_ntlm,
+                password=password,
+                authentication=SIMPLE,
+                auto_bind=False
+            )
+
+            if conn.bind():
+                logging.info(f"✅ Successfully authenticated user {username} using SIMPLE authentication (DOMAIN\\username format)")
+                conn.unbind()
+                return True
+            else:
+                logging.warning(f"SIMPLE authentication (DOMAIN\\username) failed for {username}: {conn.result}")
+        except Exception as e:
+            logging.warning(f"SIMPLE authentication (DOMAIN\\username) error for {username}: {e}")
+
+        # Fallback: Try just username with SIMPLE
+        logging.info(f"Trying plain username: {username}")
+        try:
+            conn = Connection(
+                server,
+                user=username,
+                password=password,
+                authentication=SIMPLE,
+                auto_bind=False
+            )
+
+            if conn.bind():
+                logging.info(f"✅ Successfully authenticated user {username} using SIMPLE authentication (plain username)")
+                conn.unbind()
+                return True
+            else:
+                logging.warning(f"SIMPLE authentication (plain username) failed for {username}: {conn.result}")
+        except Exception as e:
+            logging.warning(f"SIMPLE authentication (plain username) error for {username}: {e}")
+
+        # All authentication methods failed
+        logging.error(f"❌ All authentication methods failed for user: {username}")
+        logging.error(f"LDAP Config: host={LDAP_CONFIG['host']}, port={LDAP_CONFIG['port']}, domain={LDAP_CONFIG['domain']}")
+        return False
 
     except Exception as e:
         logging.error(f"LDAP authentication error for user {username}: {e}")
