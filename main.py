@@ -1,11 +1,16 @@
+import sys
+import os
+
+# CRITICAL: Enable OpenSSL legacy provider for MD4 support (required for NTLM/LDAP)
+# This must be done BEFORE importing ldap3 or any crypto libraries
+os.environ['OPENSSL_CONF'] = os.path.join(os.path.dirname(__file__), 'openssl_legacy.cnf')
+
 from fastapi import FastAPI, Request, HTTPException, Header, Depends, Response
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from typing import Optional, List, Dict, Any
-import sys
-import os
 
 # Мониторинг
 import psutil

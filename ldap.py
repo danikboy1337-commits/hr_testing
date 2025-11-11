@@ -1,3 +1,9 @@
+import os
+import sys
+
+# CRITICAL: Enable OpenSSL legacy provider for MD4 support (required for NTLM/LDAP)
+# This must be done BEFORE importing ldap3
+os.environ['OPENSSL_CONF'] = os.path.join(os.path.dirname(__file__), 'openssl_legacy.cnf')
 
 import logging
 import datetime
