@@ -23,10 +23,13 @@ async def init_db_pool():
             max_size=150,
             timeout=30,
             max_waiting=200,
-            kwargs={"autocommit": True}
+            kwargs={
+                "autocommit": True,
+                "options": "-c search_path=hr,public"  # Set schema search path
+            }
         )
         await pool.open()
-        logger.info("✅ Database pool initialized")
+        logger.info("✅ Database pool initialized (schema: hr)")
     except Exception as e:
         logger.error(f"❌ Failed to initialize database pool: {e}")
         raise

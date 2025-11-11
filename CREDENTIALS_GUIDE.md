@@ -54,24 +54,33 @@ DATABASE_URL=postgresql://USERNAME:PASSWORD@SERVER_IP:PORT/DATABASE_NAME
 
 **Example (fill in YOUR values):**
 ```bash
-# If your PostgreSQL is on a separate server at 10.20.30.40
-DATABASE_URL=postgresql://hrapp:MySecurePassword123@10.20.30.40:5432/hr_testing
+# IMPORTANT: Your database is called 'cds_hb_main' with schema 'hr'
+DATABASE_URL=postgresql://hrapp:MySecurePassword123@10.20.30.40:5432/cds_hb_main
 
 # Breakdown:
 # postgresql://    - Protocol (always this)
-# hrapp            - PostgreSQL username (you'll create this)
-# MySecurePassword123 - PostgreSQL password (you'll create this)
+# hrapp            - PostgreSQL username (from your colleague or create new)
+# MySecurePassword123 - PostgreSQL password
 # 10.20.30.40      - PostgreSQL server IP address
 # 5432             - PostgreSQL port (usually 5432)
-# hr_testing       - Database name (you'll create this)
+# cds_hb_main      - Database name (MUST be 'cds_hb_main')
 ```
 
-**What you need from your PostgreSQL server:**
-- ✅ Server IP address or hostname
+**Your Database Structure:**
+- Database name: `cds_hb_main` (already exists, created by your colleague)
+- Schema name: `hr` (all tables are under this schema)
+- Table access: `hr.users`, `hr.departments`, etc.
+- Application automatically uses `hr` schema (configured in code)
+
+**What you need:**
+- ✅ PostgreSQL server IP address or hostname
 - ✅ Port number (usually 5432)
-- ✅ Username (you'll create a new user called `hrapp`)
-- ✅ Password (you'll set this when creating the user)
-- ✅ Database name (you'll create a new database called `hr_testing`)
+- ✅ Username (probably `hrapp` - ask your colleague)
+- ✅ Password (ask your colleague)
+- ✅ Database name: **`cds_hb_main`** (fixed - do NOT change)
+- ✅ Confirm `hr` schema exists and has permissions
+
+**Note:** Read `DATABASE_SCHEMA_GUIDE.md` for detailed information about working with the `hr` schema.
 
 ---
 
@@ -216,7 +225,7 @@ Your final `.env` file should look like this (with YOUR values):
 # ============================================
 # DATABASE CONFIGURATION
 # ============================================
-DATABASE_URL=postgresql://hrapp:YourPassword@10.20.30.40:5432/hr_testing
+DATABASE_URL=postgresql://hrapp:YourPassword@10.20.30.40:5432/cds_hb_main
 
 # ============================================
 # LDAP/ACTIVE DIRECTORY AUTHENTICATION
@@ -264,79 +273,103 @@ chmod 600 /home/ocds_mukhtar/00061221/hr_testing/.env
 
 ## 🗄️ PostgreSQL Migration/Setup Process
 
-### What "Migration" Means
+### What "Migration" Means (For Your Existing Database)
 
-**Migration = Setting up the database for the first time**
+**Your colleague already created:**
+- ✅ Database: `cds_hb_main`
+- ✅ Schema: `hr`
+- ✅ Possibly tables (check with your colleague)
 
-This involves:
-1. Creating a new database on your PostgreSQL server
-2. Creating a user with access to that database
-3. Creating all the tables (users, tests, questions, etc.)
-4. Loading initial data (questions, specializations, departments)
+**What you need to do:**
+1. Get database credentials from your colleague
+2. Verify you have access to the `hr` schema
+3. Grant permissions to your user if needed
+4. Load data if tables are empty
 
 ### Step-by-Step PostgreSQL Setup
 
-#### 1. Connect to PostgreSQL Server
+#### 1. Get Database Credentials from Your Colleague
 
-**On your PostgreSQL server** (or remotely if you have access):
+Ask your colleague for:
+- PostgreSQL server IP address
+- Database name: `cds_hb_main` (confirm)
+- Username (probably `hrapp` or similar)
+- Password
+- Whether tables are already created in `hr` schema
+
+#### 2. Connect to Existing Database
+
+**Connect to the database:**
 
 ```bash
-# If PostgreSQL is on the same machine:
-sudo -u postgres psql
-
-# If PostgreSQL is on a different server:
-ssh username@POSTGRESQL_SERVER_IP
-sudo -u postgres psql
+psql -h POSTGRESQL_SERVER_IP -p 5432 -U hrapp -d cds_hb_main
 ```
 
-#### 2. Create Database and User
+**Enter the password provided by your colleague.**
+
+#### 3. Verify Schema and Permissions
+
+**Once connected:**
 
 ```sql
--- Create database
-CREATE DATABASE hr_testing;
+-- Check if hr schema exists
+\dn
 
--- Create user with strong password
-CREATE USER hrapp WITH PASSWORD 'YourStrongPasswordHere123!';
+-- Should show 'hr' in the list
 
--- Grant all privileges
-GRANT ALL PRIVILEGES ON DATABASE hr_testing TO hrapp;
+-- Check your current search path
+SHOW search_path;
 
--- Connect to the database
-\c hr_testing
+-- List tables in hr schema
+\dt hr.*
 
--- Grant schema privileges
-GRANT ALL PRIVILEGES ON SCHEMA public TO hrapp;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO hrapp;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO hrapp;
-
--- Ensure future tables also have privileges
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO hrapp;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO hrapp;
-
--- Verify
-\l hr_testing
-
--- Exit
-\q
+-- Check if tables already exist
+SELECT COUNT(*) FROM hr.users;  -- If this works, tables exist!
 ```
 
-#### 3. Test Connection from Application Server
+#### 4. Grant Permissions (If Needed)
 
-**On your application server** (where the code is):
+**If you get permission errors**, ask your colleague or DBA to run:
+
+```sql
+-- Connect as superuser or database owner
+sudo -u postgres psql -d cds_hb_main
+
+-- Grant schema usage
+GRANT USAGE ON SCHEMA hr TO hrapp;
+
+-- Grant permissions on all tables
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA hr TO hrapp;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA hr TO hrapp;
+
+-- Grant permissions on future tables
+ALTER DEFAULT PRIVILEGES IN SCHEMA hr GRANT ALL ON TABLES TO hrapp;
+ALTER DEFAULT PRIVILEGES IN SCHEMA hr GRANT ALL ON SEQUENCES TO hrapp;
+```
+
+#### 5. Test Connection from Application Server
+
+**On your application server:**
 
 ```bash
-# Test connection using psql client
-psql -h POSTGRESQL_SERVER_IP -p 5432 -U hrapp -d hr_testing
+cd /home/ocds_mukhtar/00061221/hr_testing
 
-# Enter password when prompted
+# Test connection
+psql -h POSTGRESQL_SERVER_IP -p 5432 -U hrapp -d cds_hb_main
+
 # If successful, you'll see:
-# hr_testing=>
+# cds_hb_main=>
+
+# Test querying hr schema
+SET search_path TO hr, public;
+SELECT COUNT(*) FROM users;
 
 # Exit
 \q
 ```
 
 **If connection fails:**
+- Verify credentials with your colleague
 - Check `postgresql.conf` - ensure `listen_addresses = '*'` or your app server IP
 - Check `pg_hba.conf` - add entry for your app server IP
 - Check firewall - ensure port 5432 is open

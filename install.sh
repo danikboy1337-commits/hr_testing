@@ -40,12 +40,20 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Configuration
-APP_USER="ocds_mukhtar"
-APP_DIR="/home/ocds_mukhtar/00061221/hr_testing"
-LOG_DIR="/var/log/hr_testing"
-BACKUP_DIR="/backup/hr_testing"
-PYTHON_VERSION="3.11"
+# ===================================================================
+# CONFIGURATION - Customize these paths as needed
+# ===================================================================
+APP_USER="ocds_mukhtar"                                  # User to run the application
+APP_DIR="/home/ocds_mukhtar/00061221/hr_testing"        # Application directory
+LOG_DIR="/var/log/hr_testing"                            # Log files directory (can be changed)
+BACKUP_DIR="/backup/hr_testing"                          # Database backups directory (can be changed)
+PYTHON_VERSION="3.11"                                    # Python version to use
+
+# You can change LOG_DIR and BACKUP_DIR to any path you prefer:
+# Example: LOG_DIR="/home/ocds_mukhtar/00061221/logs"
+# Example: BACKUP_DIR="/home/ocds_mukhtar/00061221/backups"
+# Just ensure the directories are writable by APP_USER
+# ===================================================================
 
 # Functions
 print_header() {
