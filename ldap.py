@@ -132,24 +132,29 @@ def check_ldap_password(username: str, password: str) -> bool:
 
         logging.info(f"Attempting to bind with user DN: {user_dn}")
 
+        # Create connection without auto_bind to handle errors properly
         conn = Connection(
             server,
             user=user_dn,
             password=password,
             authentication=NTLM,
-           auto_bind=True
+            auto_bind=False
         )
 
-        if conn.bind():
-            logging.info(f"Successfully authenticated user: {username}")
+        # Explicitly attempt to bind
+        if not conn.bind():
+            logging.error(f"Failed to authenticate user: {username} - Bind returned False")
+            logging.error(f"Connection result: {conn.result}")
             conn.unbind()
-            return True
-        else:
-            logging.error(f"Failed to authenticate user: {username}")
             return False
 
+        logging.info(f"Successfully authenticated user: {username}")
+        conn.unbind()
+        return True
+
     except Exception as e:
-        logging.error(f"LDAP authentication error: {e}")
+        logging.error(f"LDAP authentication error for user {username}: {e}")
+        logging.error(f"LDAP Config: host={LDAP_CONFIG['host']}, port={LDAP_CONFIG['port']}, domain={LDAP_CONFIG['domain']}")
         return False
 
 def create_access_token(data: dict, expires_delta: Optional[datetime.timedelta] = None):
