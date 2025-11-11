@@ -3,7 +3,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional, List, Dict, Any
 import sys
 import os
 
@@ -97,7 +97,7 @@ class AnswerSubmit(BaseModel):
     user_answer: int
 
 class SelfAssessmentSubmit(BaseModel):
-    assessments: list[dict]  # [{"competency_id": 1, "self_rating": 8}, ...]
+    assessments: List[Dict[str, Any]]  # [{"competency_id": 1, "self_rating": 8}, ...]
 
 class LoginRequest(BaseModel):
     phone: str
