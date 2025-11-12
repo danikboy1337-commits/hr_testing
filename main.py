@@ -1264,10 +1264,10 @@ async def get_hr_results(
                 ust.id as test_id,
                 u.id as user_id,
                 u.name,
-                u.surname,
-                u.phone,
+                u.tab_number,
                 u.company,
-                u.job_title,
+                u.role,
+                d.name as department,
                 s.name as specialization,
                 p.name as profile,
                 ust.score,
@@ -1294,6 +1294,7 @@ async def get_hr_results(
                 ) as self_assessments
             FROM user_specialization_tests ust
             JOIN users u ON ust.user_id = u.id
+            LEFT JOIN departments d ON u.department_id = d.id
             JOIN specializations s ON ust.specialization_id = s.id
             JOIN profiles p ON s.profile_id = p.id
             WHERE ust.completed_at IS NOT NULL
@@ -1326,8 +1327,8 @@ async def get_hr_results(
 
         if search:
             search_param = f"%{search}%"
-            query += " AND (LOWER(u.name) LIKE LOWER(%s) OR LOWER(u.surname) LIKE LOWER(%s) OR LOWER(u.phone) LIKE LOWER(%s))"
-            params.extend([search_param, search_param, search_param])
+            query += " AND (LOWER(u.name) LIKE LOWER(%s) OR LOWER(u.tab_number) LIKE LOWER(%s))"
+            params.extend([search_param, search_param])
 
         query += " ORDER BY ust.completed_at DESC"
 
@@ -1426,10 +1427,10 @@ async def get_hr_result_detail(test_id: int):
                     SELECT
                         ust.id,
                         u.name,
-                        u.surname,
-                        u.phone,
+                        u.tab_number,
                         u.company,
-                        u.job_title,
+                        u.role,
+                        d.name as department,
                         s.name as specialization,
                         p.name as profile,
                         ust.score,
@@ -1438,6 +1439,7 @@ async def get_hr_result_detail(test_id: int):
                         ust.completed_at
                     FROM user_specialization_tests ust
                     JOIN users u ON ust.user_id = u.id
+                    LEFT JOIN departments d ON u.department_id = d.id
                     JOIN specializations s ON ust.specialization_id = s.id
                     JOIN profiles p ON s.profile_id = p.id
                     WHERE ust.id = $1

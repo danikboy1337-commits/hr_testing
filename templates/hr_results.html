@@ -550,9 +550,9 @@
                         <tr>
                             <th>ID</th>
                             <th>Сотрудник</th>
-                            <th>Телефон</th>
+                            <th>Табельный№</th>
                             <th>Компания</th>
-                            <th>Должность</th>
+                            <th>Роль</th>
                             <th>Специализация</th>
                             <th>Балл</th>
                             <th>%</th>
@@ -684,10 +684,10 @@
                 return `
                     <tr>
                         <td>${result.test_id}</td>
-                        <td><strong>${result.name} ${result.surname}</strong></td>
-                        <td>${result.phone || '-'}</td>
+                        <td><strong>${result.name}</strong></td>
+                        <td>${result.tab_number || '-'}</td>
                         <td>${result.company || '-'}</td>
-                        <td>${result.job_title || '-'}</td>
+                        <td>${result.role || '-'}</td>
                         <td>${result.specialization}</td>
                         <td class="score-display">${result.score}/${result.max_score}</td>
                         <td><strong>${result.percentage}%</strong></td>
@@ -718,20 +718,24 @@
                         <h3>👤 Информация о сотруднике</h3>
                         <div class="detail-grid">
                             <div class="detail-item">
-                                <div class="detail-label">ФИО</div>
-                                <div class="detail-value">${info.name} ${info.surname}</div>
+                                <div class="detail-label">Имя</div>
+                                <div class="detail-value">${info.name}</div>
                             </div>
                             <div class="detail-item">
-                                <div class="detail-label">Телефон</div>
-                                <div class="detail-value">${info.phone || '-'}</div>
+                                <div class="detail-label">Табельный№</div>
+                                <div class="detail-value">${info.tab_number || '-'}</div>
                             </div>
                             <div class="detail-item">
                                 <div class="detail-label">Компания</div>
                                 <div class="detail-value">${info.company || '-'}</div>
                             </div>
                             <div class="detail-item">
-                                <div class="detail-label">Должность</div>
-                                <div class="detail-value">${info.job_title || '-'}</div>
+                                <div class="detail-label">Роль</div>
+                                <div class="detail-value">${info.role || '-'}</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">Отдел</div>
+                                <div class="detail-value">${info.department || '-'}</div>
                             </div>
                             <div class="detail-item">
                                 <div class="detail-label">Специализация</div>
@@ -866,7 +870,7 @@
                 return;
             }
 
-            const headers = ['ID', 'Имя', 'Фамилия', 'Телефон', 'Компания', 'Должность', 'Специализация',
+            const headers = ['ID', 'Имя', 'Табельный№', 'Компания', 'Роль', 'Отдел', 'Специализация',
                             'Балл', 'Макс балл', 'Процент', 'Уровень', 'Время (мин)', 'Дата'];
 
             let csv = headers.join(',') + '\n';
@@ -875,10 +879,10 @@
                 const row = [
                     result.test_id,
                     result.name,
-                    result.surname,
-                    result.phone || '',
+                    result.tab_number || '',
                     result.company || '',
-                    result.job_title || '',
+                    result.role || '',
+                    result.department || '',
                     result.specialization,
                     result.score,
                     result.max_score,
