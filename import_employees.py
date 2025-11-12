@@ -74,23 +74,48 @@ async def import_employees_from_excel(excel_file_path: str):
 
                 # Now import employees
                 print("\n👥 Importing employees...")
+                print("   (Auto-fixing Excel format: padding tab_numbers with leading zeros)")
+                print("   Examples: 62704 → 00062704, 238 → 00000238\n")
 
                 imported_count = 0
                 updated_count = 0
                 skipped_count = 0
                 errors = []
+                conversions_shown = 0
 
                 for idx, row in df.iterrows():
                     try:
                         # Get required fields
-                        tab_number = str(row['tab_number']).strip()
+                        tab_number_raw = str(row['tab_number']).strip()
                         name = str(row['name']).strip()
                         department_id = int(row['department_id'])
                         role = str(row['role']).strip().lower()
 
                         # Validate data
-                        if not tab_number or tab_number.lower() in ['nan', 'none', '']:
+                        if not tab_number_raw or tab_number_raw.lower() in ['nan', 'none', '']:
                             errors.append(f"Row {idx+2}: Missing tab_number")
+                            skipped_count += 1
+                            continue
+
+                        # Fix Excel issue: pad tab_number with leading zeros to 8 digits
+                        # Examples: "62704" -> "00062704", "238" -> "00000238"
+                        try:
+                            # Remove any non-digit characters and convert to int then back to string
+                            tab_number_clean = ''.join(filter(str.isdigit, tab_number_raw))
+                            if tab_number_clean:
+                                # Pad with leading zeros to make it 8 digits
+                                tab_number = tab_number_clean.zfill(8)
+
+                                # Show first few conversions as examples
+                                if tab_number_raw != tab_number and conversions_shown < 3:
+                                    print(f"   📝 Converting: {tab_number_raw} → {tab_number}")
+                                    conversions_shown += 1
+                            else:
+                                errors.append(f"Row {idx+2}: Invalid tab_number '{tab_number_raw}' (no digits found)")
+                                skipped_count += 1
+                                continue
+                        except Exception as e:
+                            errors.append(f"Row {idx+2}: Failed to process tab_number '{tab_number_raw}': {e}")
                             skipped_count += 1
                             continue
 
