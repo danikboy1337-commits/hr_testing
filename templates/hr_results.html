@@ -633,19 +633,41 @@
                 if (search) params.append('search', search);
 
                 const response = await fetch('/api/hr/results?' + params.toString());
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
                 const data = await response.json();
+
+                if (!data || !data.results) {
+                    throw new Error('Invalid response format from server');
+                }
 
                 allResults = data.results;
                 renderResults(data.results);
             } catch (error) {
                 console.error('Error loading results:', error);
+                let errorMessage = 'Ошибка загрузки данных';
+
+                if (error.message.includes('500')) {
+                    errorMessage = 'Ошибка сервера. Проверьте, что:<br>1. Запущена база данных<br>2. Выполнена миграция (python run_migration.py)<br>3. Импортированы сотрудники (python import_employees.py)';
+                }
+
                 document.getElementById('resultsBody').innerHTML =
-                    '<tr><td colspan="12" class="empty-state"><div class="empty-state-icon">❌</div><div class="empty-state-text">Ошибка загрузки данных</div></td></tr>';
+                    `<tr><td colspan="13" class="empty-state"><div class="empty-state-icon">❌</div><div class="empty-state-text">${errorMessage}</div></td></tr>`;
             }
         }
 
         function renderResults(results) {
             const tbody = document.getElementById('resultsBody');
+
+            // Safety check
+            if (!results || !Array.isArray(results)) {
+                tbody.innerHTML = '<tr><td colspan="13" class="empty-state"><div class="empty-state-icon">⚠️</div><div class="empty-state-text">Некорректные данные</div></td></tr>';
+                return;
+            }
+
             document.getElementById('resultsCount').textContent = results.length;
 
             if (results.length === 0) {
