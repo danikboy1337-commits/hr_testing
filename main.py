@@ -606,7 +606,7 @@ async def ldap_login(request: LDAPLoginRequest):
             async with conn.cursor() as cur:
                 # Look for user by employee_id (stored in tab_number field)
                 await cur.execute(
-                    "SELECT id, name, role, department_id FROM users WHERE tab_number = %s",
+                    "SELECT id, name, role, department_id FROM hr.users WHERE tab_number = %s",
                     (request.employee_id,)
                 )
                 db_user = await cur.fetchone()
@@ -618,14 +618,14 @@ async def ldap_login(request: LDAPLoginRequest):
                     # Update user info if needed (sync with LDAP)
                     if db_name != ldap_user_data['name'] or db_role != ldap_user_data['role']:
                         await cur.execute(
-                            "UPDATE users SET name = %s, role = %s WHERE id = %s",
+                            "UPDATE hr.users SET name = %s, role = %s WHERE id = %s",
                             (ldap_user_data['name'], ldap_user_data['role'], user_id)
                         )
                         await conn.commit()
                 else:
                     # Auto-create user from LDAP data (if not in Excel import)
                     await cur.execute(
-                        """INSERT INTO users (name, tab_number, company, role, department_id)
+                        """INSERT INTO hr.users (name, tab_number, company, role, department_id)
                            VALUES (%s, %s, %s, %s, %s) RETURNING id""",
                         (
                             ldap_user_data['name'],
@@ -1289,15 +1289,15 @@ async def get_hr_results(
                         'self_rating', csa.self_rating,
                         'importance', c.importance
                     ) ORDER BY c.importance DESC)
-                    FROM competency_self_assessments csa
-                    JOIN competencies c ON csa.competency_id = c.id
+                    FROM hr.competency_self_assessments csa
+                    JOIN hr.competencies c ON csa.competency_id = c.id
                     WHERE csa.user_test_id = ust.id
                 ) as self_assessments
-            FROM user_specialization_tests ust
-            JOIN users u ON ust.user_id = u.id
-            LEFT JOIN departments d ON u.department_id = d.id
-            JOIN specializations s ON ust.specialization_id = s.id
-            JOIN profiles p ON s.profile_id = p.id
+            FROM hr.user_specialization_tests ust
+            JOIN hr.users u ON ust.user_id = u.id
+            LEFT JOIN hr.departments d ON u.department_id = d.id
+            JOIN hr.specializations s ON ust.specialization_id = s.id
+            JOIN hr.profiles p ON s.profile_id = p.id
             WHERE ust.completed_at IS NOT NULL
         """
 
@@ -1438,11 +1438,11 @@ async def get_hr_result_detail(test_id: int):
                         ust.max_score,
                         ust.started_at,
                         ust.completed_at
-                    FROM user_specialization_tests ust
-                    JOIN users u ON ust.user_id = u.id
-                    LEFT JOIN departments d ON u.department_id = d.id
-                    JOIN specializations s ON ust.specialization_id = s.id
-                    JOIN profiles p ON s.profile_id = p.id
+                    FROM hr.user_specialization_tests ust
+                    JOIN hr.users u ON ust.user_id = u.id
+                    LEFT JOIN hr.departments d ON u.department_id = d.id
+                    JOIN hr.specializations s ON ust.specialization_id = s.id
+                    JOIN hr.profiles p ON s.profile_id = p.id
                     WHERE ust.id = $1
                 """, (test_id,))
                 test_info = await cur.fetchone()
