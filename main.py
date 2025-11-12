@@ -654,6 +654,7 @@ async def ldap_login(request: LDAPLoginRequest):
             "name": ldap_user_data['name'],
             "employee_id": request.employee_id,
             "role": ldap_user_data['role'],
+            "department_id": db_department_id,
             "permissions": ldap_user_data['permissions'],
             "token": token,
             "auth_method": "ldap"
