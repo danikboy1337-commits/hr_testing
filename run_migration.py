@@ -7,7 +7,7 @@ import sys
 import asyncio
 sys.path.append('.')
 
-from db.database import get_db_connection
+from db.database import init_db_pool, close_db_pool, get_db_connection
 
 async def run_migration():
     """Apply the migration to add roles and departments"""
@@ -15,6 +15,10 @@ async def run_migration():
     print("=" * 70)
     print("🔄 APPLYING DATABASE MIGRATION")
     print("=" * 70)
+
+    # Initialize database pool
+    print("\n📊 Initializing database connection pool...")
+    await init_db_pool()
 
     migration_sql = """
     -- 1. Create departments table
@@ -83,6 +87,10 @@ async def run_migration():
         print(f"\n❌ Migration failed: {e}")
         print("\nIf the migration already ran, this is OK - the schema is already updated.")
         return False
+    finally:
+        # Close database pool
+        print("\n🔌 Closing database connection pool...")
+        await close_db_pool()
 
     print("\n" + "=" * 70)
     print("✅ DATABASE MIGRATION COMPLETE")
@@ -95,7 +103,10 @@ async def run_migration():
 
 if __name__ == "__main__":
     try:
-        asyncio.run(run_migration())
+        result = asyncio.run(run_migration())
+        sys.exit(0 if result else 1)
     except Exception as e:
         print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
