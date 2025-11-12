@@ -368,13 +368,8 @@
 
                     // Redirect based on role
                     setTimeout(() => {
-                        if (data.role === 'hr' || data.role === 'admin') {
-                            window.location.href = '/panel-selection';
-                        } else if (data.role === 'manager') {
-                            window.location.href = '/manager/menu';
-                        } else {
-                            window.location.href = '/specializations';
-                        }
+                        // Redirect to panels page for all roles
+                        window.location.href = '/panels';
                     }, 1000);
                 } else {
                     // Show error
