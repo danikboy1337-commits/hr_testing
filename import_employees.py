@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Import employee data from Excel file to database
-Supports: employee_id, name, department, role
+Matches the exact schema: name, tab_number, department_id, role
 """
 
 import sys
@@ -31,65 +31,46 @@ async def import_employees_from_excel(excel_file_path: str):
         except Exception as e:
             print(f"❌ Failed to read Excel file: {e}")
             print("\nMake sure you have openpyxl installed:")
-            print("  pip install openpyxl")
+            print("  pip install openpyxl pandas")
             return False
 
         print(f"✅ Found {len(df)} rows in Excel file")
-
-        # Display column names
-        print(f"\n📋 Columns found: {list(df.columns)}")
-
-        # Try to detect column names (case-insensitive, flexible naming)
-        column_mapping = {}
-
-        # Detect employee_id column
-        for col in df.columns:
-            col_lower = str(col).lower()
-            if 'employee' in col_lower and ('id' in col_lower or 'number' in col_lower or 'номер' in col_lower):
-                column_mapping['employee_id'] = col
-            elif 'табельный' in col_lower:
-                column_mapping['employee_id'] = col
-            elif 'name' in col_lower or 'имя' in col_lower or 'фио' in col_lower:
-                column_mapping['name'] = col
-            elif 'department' in col_lower or 'отдел' in col_lower or 'dept' in col_lower:
-                column_mapping['department'] = col
-            elif 'role' in col_lower or 'роль' in col_lower or 'должность' in col_lower:
-                column_mapping['role'] = col
-
-        print(f"\n🔍 Detected column mapping:")
-        for key, value in column_mapping.items():
-            print(f"   {key}: '{value}'")
+        print(f"📋 Columns found: {list(df.columns)}")
 
         # Validate required columns
-        if 'employee_id' not in column_mapping:
-            print("\n❌ Error: Could not find employee_id column")
-            print("Please ensure your Excel has a column like:")
-            print("  - 'Employee ID' or 'Employee Number'")
-            print("  - 'Табельный номер'")
+        required_columns = ['name', 'tab_number', 'department_id', 'role']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+
+        if missing_columns:
+            print(f"\n❌ Error: Missing required columns: {missing_columns}")
+            print(f"\nExpected columns: {required_columns}")
+            print(f"Found columns: {list(df.columns)}")
             return False
 
         # Connect to database
         async with get_db_connection() as conn:
             async with conn.cursor() as cur:
 
-                # First, ensure departments exist
-                departments_created = set()
+                # First, ensure the 4 departments exist
+                print("\n📦 Setting up departments...")
 
-                print("\n📦 Processing departments...")
-                for _, row in df.iterrows():
-                    if 'department' in column_mapping and pd.notna(row[column_mapping['department']]):
-                        dept_name = str(row[column_mapping['department']]).strip()
-                        if dept_name and dept_name not in departments_created:
-                            await cur.execute(
-                                """INSERT INTO departments (name, description)
-                                   VALUES (%s, %s)
-                                   ON CONFLICT (name) DO NOTHING""",
-                                (dept_name, f"Imported from Excel")
-                            )
-                            departments_created.add(dept_name)
+                departments = [
+                    (1, 'Halyk Super App'),
+                    (2, 'Onlinebank'),
+                    (3, 'OCDS'),
+                    (4, 'AI')
+                ]
+
+                for dept_id, dept_name in departments:
+                    await cur.execute(
+                        """INSERT INTO departments (id, name, description)
+                           VALUES (%s, %s, %s)
+                           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name""",
+                        (dept_id, dept_name, f'{dept_name} department')
+                    )
 
                 await conn.commit()
-                print(f"✅ Processed {len(departments_created)} unique departments")
+                print(f"✅ Departments configured: {[d[1] for d in departments]}")
 
                 # Now import employees
                 print("\n👥 Importing employees...")
@@ -97,41 +78,42 @@ async def import_employees_from_excel(excel_file_path: str):
                 imported_count = 0
                 updated_count = 0
                 skipped_count = 0
+                errors = []
 
                 for idx, row in df.iterrows():
                     try:
-                        # Get employee_id (required)
-                        employee_id = str(row[column_mapping['employee_id']]).strip()
+                        # Get required fields
+                        tab_number = str(row['tab_number']).strip()
+                        name = str(row['name']).strip()
+                        department_id = int(row['department_id'])
+                        role = str(row['role']).strip().lower()
 
-                        if not employee_id or employee_id.lower() in ['nan', 'none', '']:
+                        # Validate data
+                        if not tab_number or tab_number.lower() in ['nan', 'none', '']:
+                            errors.append(f"Row {idx+2}: Missing tab_number")
                             skipped_count += 1
                             continue
 
-                        # Get other fields (optional)
-                        name = str(row[column_mapping['name']]).strip() if 'name' in column_mapping and pd.notna(row[column_mapping['name']]) else employee_id
-                        department_name = str(row[column_mapping['department']]).strip() if 'department' in column_mapping and pd.notna(row[column_mapping['department']]) else None
-                        role = str(row[column_mapping['role']]).strip().lower() if 'role' in column_mapping and pd.notna(row[column_mapping['role']]) else 'employee'
+                        if not name or name.lower() in ['nan', 'none', '']:
+                            errors.append(f"Row {idx+2}: Missing name for {tab_number}")
+                            skipped_count += 1
+                            continue
+
+                        # Validate department_id
+                        if department_id not in [1, 2, 3, 4]:
+                            errors.append(f"Row {idx+2}: Invalid department_id {department_id} for {tab_number} (must be 1-4)")
+                            skipped_count += 1
+                            continue
 
                         # Validate role
                         if role not in ['employee', 'hr', 'manager']:
-                            print(f"⚠️  Row {idx+2}: Invalid role '{role}' for {employee_id}, defaulting to 'employee'")
+                            errors.append(f"Row {idx+2}: Invalid role '{role}' for {tab_number}, defaulting to 'employee'")
                             role = 'employee'
-
-                        # Get department_id if department specified
-                        department_id = None
-                        if department_name:
-                            await cur.execute(
-                                "SELECT id FROM departments WHERE name = %s",
-                                (department_name,)
-                            )
-                            dept_result = await cur.fetchone()
-                            if dept_result:
-                                department_id = dept_result[0]
 
                         # Check if user exists
                         await cur.execute(
-                            "SELECT id FROM users WHERE phone = %s",
-                            (employee_id,)
+                            "SELECT id FROM users WHERE tab_number = %s",
+                            (tab_number,)
                         )
                         existing_user = await cur.fetchone()
 
@@ -140,16 +122,16 @@ async def import_employees_from_excel(excel_file_path: str):
                             await cur.execute(
                                 """UPDATE users
                                    SET name = %s, role = %s, department_id = %s
-                                   WHERE phone = %s""",
-                                (name, role, department_id, employee_id)
+                                   WHERE tab_number = %s""",
+                                (name, role, department_id, tab_number)
                             )
                             updated_count += 1
                         else:
                             # Insert new user
                             await cur.execute(
-                                """INSERT INTO users (name, surname, phone, company, job_title, role, department_id)
-                                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                                (name, '', employee_id, 'Halyk Bank', role.title(), role, department_id)
+                                """INSERT INTO users (name, tab_number, company, role, department_id)
+                                   VALUES (%s, %s, %s, %s, %s)""",
+                                (name, tab_number, 'Halyk Bank', role, department_id)
                             )
                             imported_count += 1
 
@@ -157,7 +139,7 @@ async def import_employees_from_excel(excel_file_path: str):
                             print(f"   Processed {imported_count + updated_count} employees...")
 
                     except Exception as e:
-                        print(f"⚠️  Row {idx+2}: Error processing employee: {e}")
+                        errors.append(f"Row {idx+2}: Error processing {tab_number if 'tab_number' in locals() else 'unknown'}: {e}")
                         skipped_count += 1
                         continue
 
@@ -168,16 +150,44 @@ async def import_employees_from_excel(excel_file_path: str):
                 print(f"   🔄 Existing employees updated: {updated_count}")
                 print(f"   ⏭️  Rows skipped: {skipped_count}")
 
+                if errors:
+                    print(f"\n⚠️  Errors encountered:")
+                    for error in errors[:10]:  # Show first 10 errors
+                        print(f"   - {error}")
+                    if len(errors) > 10:
+                        print(f"   ... and {len(errors) - 10} more errors")
+
                 # Show summary
                 await cur.execute("SELECT COUNT(*) FROM users")
                 total_users = (await cur.fetchone())[0]
 
-                await cur.execute("SELECT COUNT(*) FROM departments")
-                total_depts = (await cur.fetchone())[0]
+                await cur.execute("""
+                    SELECT d.name, COUNT(u.id)
+                    FROM departments d
+                    LEFT JOIN users u ON d.id = u.department_id
+                    GROUP BY d.id, d.name
+                    ORDER BY d.id
+                """)
+                dept_summary = await cur.fetchall()
 
                 print(f"\n📊 Database Summary:")
                 print(f"   Total users: {total_users}")
-                print(f"   Total departments: {total_depts}")
+                print(f"\n   Users by department:")
+                for dept_name, count in dept_summary:
+                    print(f"   - {dept_name}: {count} employees")
+
+                # Role distribution
+                await cur.execute("""
+                    SELECT role, COUNT(*)
+                    FROM users
+                    GROUP BY role
+                    ORDER BY role
+                """)
+                role_summary = await cur.fetchall()
+
+                print(f"\n   Users by role:")
+                for role_name, count in role_summary:
+                    print(f"   - {role_name}: {count} employees")
 
     except Exception as e:
         print(f"\n❌ Import failed: {e}")
@@ -194,7 +204,7 @@ async def import_employees_from_excel(excel_file_path: str):
     print("=" * 70)
     print("\nYou can now:")
     print("  1. Run the application: python main.py")
-    print("  2. Employees can log in with their employee_id and AD password")
+    print("  2. Employees can log in with their tab_number and AD password")
     print("  3. Their role and department will be automatically loaded")
     print("\n")
 
@@ -207,10 +217,10 @@ if __name__ == "__main__":
         print("  python import_employees.py employees.xlsx")
         print("  python import_employees.py /path/to/employees.xlsx")
         print("\nExpected Excel columns:")
-        print("  - Employee ID / Табельный номер (required)")
-        print("  - Name / Имя (optional)")
-        print("  - Department / Отдел (optional)")
-        print("  - Role / Роль (optional: employee, hr, manager)")
+        print("  - name: Employee full name")
+        print("  - tab_number: Employee ID (format: 00012345)")
+        print("  - department_id: Department ID (1=Halyk Super App, 2=Onlinebank, 3=OCDS, 4=AI)")
+        print("  - role: Role (employee, hr, or manager)")
         sys.exit(1)
 
     excel_file = sys.argv[1]

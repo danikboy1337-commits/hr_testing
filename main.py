@@ -604,16 +604,16 @@ async def ldap_login(request: LDAPLoginRequest):
         # Step 2: Check if user exists in our HR database
         async with get_db_connection() as conn:
             async with conn.cursor() as cur:
-                # Look for user by employee_id (stored in phone field for now)
+                # Look for user by employee_id (stored in tab_number field)
                 await cur.execute(
-                    "SELECT id, name, surname, role, department_id FROM users WHERE phone = %s",
+                    "SELECT id, name, role, department_id FROM users WHERE tab_number = %s",
                     (request.employee_id,)
                 )
                 db_user = await cur.fetchone()
 
                 if db_user:
                     # User exists in database
-                    user_id, db_name, db_surname, db_role, db_department_id = db_user
+                    user_id, db_name, db_role, db_department_id = db_user
 
                     # Update user info if needed (sync with LDAP)
                     if db_name != ldap_user_data['name'] or db_role != ldap_user_data['role']:
@@ -623,17 +623,16 @@ async def ldap_login(request: LDAPLoginRequest):
                         )
                         await conn.commit()
                 else:
-                    # Auto-create user from LDAP data
+                    # Auto-create user from LDAP data (if not in Excel import)
                     await cur.execute(
-                        """INSERT INTO users (name, surname, phone, company, job_title, role)
-                           VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+                        """INSERT INTO users (name, tab_number, company, role, department_id)
+                           VALUES (%s, %s, %s, %s, %s) RETURNING id""",
                         (
                             ldap_user_data['name'],
-                            '',  # No surname in LDAP
-                            request.employee_id,  # Store employee_id in phone field
+                            request.employee_id,  # Store employee_id in tab_number field
                             'Halyk Bank',
                             ldap_user_data['role'],
-                            ldap_user_data['role']
+                            None  # Department will be set via Excel import
                         )
                     )
                     user_id = (await cur.fetchone())[0]
