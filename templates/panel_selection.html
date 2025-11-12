@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Выбор панели - Halyk HR Testing</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #1DB584 0%, #0a7d5a 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .panel-selection-container {
+            max-width: 900px;
+            width: 100%;
+            background: white;
+            border-radius: 20px;
+            padding: 50px 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            animation: slideUp 0.5s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            color: #1DB584;
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 16px;
+        }
+
+        .panels-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin-top: 40px;
+        }
+
+        .panel-card {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 40px 30px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 3px solid transparent;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .panel-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(29, 181, 132, 0.3);
+            border-color: #1DB584;
+        }
+
+        .panel-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 5px;
+            background: linear-gradient(90deg, #1DB584, #0a7d5a);
+            transform: scaleX(0);
+            transition: transform 0.3s ease;
+        }
+
+        .panel-card:hover::before {
+            transform: scaleX(1);
+        }
+
+        .panel-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+
+        .panel-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 15px;
+        }
+
+        .panel-description {
+            font-size: 15px;
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 20px;
+        }
+
+        .panel-button {
+            background: #1DB584;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .panel-button:hover {
+            background: #0a7d5a;
+            transform: scale(1.05);
+        }
+
+        .user-info {
+            background: #f0f9f6;
+            padding: 15px 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .user-info-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .user-icon {
+            font-size: 24px;
+        }
+
+        .user-details {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .user-name {
+            font-weight: 600;
+            color: #2c3e50;
+            font-size: 16px;
+        }
+
+        .user-role {
+            font-size: 14px;
+            color: #1DB584;
+        }
+
+        .logout-btn {
+            background: transparent;
+            border: 2px solid #e74c3c;
+            color: #e74c3c;
+            padding: 8px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .logout-btn:hover {
+            background: #e74c3c;
+            color: white;
+        }
+
+        @media (max-width: 768px) {
+            .panels-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .header h1 {
+                font-size: 24px;
+            }
+
+            .user-info {
+                flex-direction: column;
+                gap: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="panel-selection-container">
+        <div class="user-info">
+            <div class="user-info-left">
+                <span class="user-icon">👤</span>
+                <div class="user-details">
+                    <span class="user-name" id="userName">Loading...</span>
+                    <span class="user-role" id="userRole">HR Manager</span>
+                </div>
+            </div>
+            <button class="logout-btn" onclick="logout()">Выйти</button>
+        </div>
+
+        <div class="header">
+            <h1>Выберите панель</h1>
+            <p>Вы можете выбрать панель для работы</p>
+        </div>
+
+        <div class="panels-grid">
+            <div class="panel-card" onclick="navigateTo('/specializations')">
+                <div class="panel-icon">📝</div>
+                <div class="panel-title">Панель тестирования</div>
+                <div class="panel-description">
+                    Пройдите тестирование по компетенциям, выберите специализацию и получите оценку уровня
+                </div>
+                <button class="panel-button">Перейти к тестированию</button>
+            </div>
+
+            <div class="panel-card" onclick="navigateTo('/hr/menu')">
+                <div class="panel-icon">👥</div>
+                <div class="panel-title">HR Панель</div>
+                <div class="panel-description">
+                    Управление результатами, аналитика, мониторинг и диагностика системы
+                </div>
+                <button class="panel-button">Перейти в HR панель</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Get user info from localStorage or token
+        function getUserInfo() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login';
+                return;
+            }
+
+            // Decode JWT token to get user info
+            try {
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                document.getElementById('userName').textContent = payload.name || payload.employee_id || 'User';
+
+                const role = payload.role || 'employee';
+                const roleNames = {
+                    'hr': 'HR Manager',
+                    'manager': 'Manager',
+                    'employee': 'Employee'
+                };
+                document.getElementById('userRole').textContent = roleNames[role] || role;
+            } catch (e) {
+                console.error('Failed to decode token:', e);
+                document.getElementById('userName').textContent = 'User';
+            }
+        }
+
+        function navigateTo(path) {
+            window.location.href = path;
+        }
+
+        function logout() {
+            if (confirm('Вы уверены, что хотите выйти?')) {
+                localStorage.removeItem('token');
+                window.location.href = '/login';
+            }
+        }
+
+        // Load user info on page load
+        getUserInfo();
+    </script>
+</body>
+</html>

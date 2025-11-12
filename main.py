@@ -478,6 +478,12 @@ async def hr_login_page():
     with open('templates/hr_login.html', 'r', encoding='utf-8') as f:
         return HTMLResponse(content=f.read())
 
+@app.get("/panel-selection", response_class=HTMLResponse)
+async def panel_selection_page():
+    """Panel selection page for HR managers"""
+    with open('templates/panel_selection.html', 'r', encoding='utf-8') as f:
+        return HTMLResponse(content=f.read())
+
 @app.get("/hr/menu", response_class=HTMLResponse)
 async def hr_menu_page(hr_user: dict = Depends(verify_hr_cookie)):
     """HR меню - защищено"""
