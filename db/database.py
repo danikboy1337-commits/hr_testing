@@ -24,8 +24,8 @@ async def init_db_pool():
             timeout=30,
             max_waiting=200,
             kwargs={
-                "autocommit": True,
-                "options": "-c search_path=hr,public"  # Set schema search path
+                "autocommit": True
+                # search_path removed - using explicit hr. prefix in all queries instead
             }
         )
         await pool.open()
