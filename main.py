@@ -192,9 +192,9 @@ async def generate_ai_recommendation(user_test_id: int):
             async with conn.cursor() as cur:
                 await cur.execute("""
                     SELECT ut.score, ut.max_score, s.name, u.name, u.surname
-                    FROM user_specialization_tests ut
-                    JOIN specializations s ON s.id = ut.specialization_id
-                    JOIN users u ON u.id = ut.user_id
+                    FROM hr.user_specialization_tests ut
+                    JOIN hr.specializations s ON s.id = ut.specialization_id
+                    JOIN hr.users u ON u.id = ut.user_id
                     WHERE ut.id = %s
                 """, (user_test_id,))
                 
@@ -215,7 +215,7 @@ async def generate_ai_recommendation(user_test_id: int):
                 recommendation = f"Рекомендация: {name}, вы показали {level} уровень в области \"{specialization}\" ({score}/{max_score} баллов). Продолжайте развиваться в выбранном направлении и обращайте внимание на практические навыки."
                 
                 await cur.execute(
-                    "INSERT INTO ai_recommendations (user_test_id, recommendation_text) VALUES (%s, %s)",
+                    "INSERT INTO hr.ai_recommendations (user_test_id, recommendation_text) VALUES (%s, %s)",
                     (user_test_id, recommendation)
                 )
                 
@@ -244,7 +244,7 @@ async def get_departments():
     try:
         async with get_db_connection() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("SELECT id, name, description FROM departments ORDER BY name")
+                await cur.execute("SELECT id, name, description FROM hr.departments ORDER BY name")
                 rows = await cur.fetchall()
                 departments = [
                     {"id": row[0], "name": row[1], "description": row[2]}
@@ -281,8 +281,8 @@ async def debug_current_user(authorization: Optional[str] = Header(None)):
                 await cur.execute("""
                     SELECT u.id, u.name, u.surname, u.phone, u.company, u.job_title,
                            u.role, u.department_id, d.name as department_name
-                    FROM users u
-                    LEFT JOIN departments d ON u.department_id = d.id
+                    FROM hr.users u
+                    LEFT JOIN hr.departments d ON u.department_id = d.id
                     WHERE u.id = %s
                 """, (user_data.get("user_id"),))
                 user_row = await cur.fetchone()
@@ -330,9 +330,9 @@ async def get_all_users(
             SELECT u.id, u.name, u.surname, u.phone, u.company, u.job_title,
                    u.role, u.department_id, d.name as department_name, u.registered_at,
                    COUNT(DISTINCT ust.id) as completed_tests
-            FROM users u
-            LEFT JOIN departments d ON u.department_id = d.id
-            LEFT JOIN user_specialization_tests ust ON u.id = ust.user_id AND ust.completed_at IS NOT NULL
+            FROM hr.users u
+            LEFT JOIN hr.departments d ON u.department_id = d.id
+            LEFT JOIN hr.user_specialization_tests ust ON u.id = ust.user_id AND ust.completed_at IS NOT NULL
         """
 
         params = []
@@ -386,7 +386,7 @@ async def get_all_users(
                         COUNT(CASE WHEN role = 'employee' THEN 1 END) as employees,
                         COUNT(CASE WHEN role = 'hr' THEN 1 END) as hr,
                         COUNT(CASE WHEN role = 'manager' THEN 1 END) as managers
-                    FROM users
+                    FROM hr.users
                 """)
                 stats = await cur.fetchone()
 
@@ -704,7 +704,7 @@ async def get_profiles():
     try:
         async with get_db_connection() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("SELECT id, name, has_specializations FROM profiles ORDER BY id")
+                await cur.execute("SELECT id, name, has_specializations FROM hr.profiles ORDER BY id")
                 rows = await cur.fetchall()
         
         profiles = [{"id": row[0], "name": row[1], "has_specializations": row[2]} for row in rows]
@@ -718,7 +718,7 @@ async def get_specializations(profile_id: int):
         async with get_db_connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "SELECT id, name FROM specializations WHERE profile_id = %s ORDER BY id",
+                    "SELECT id, name FROM hr.specializations WHERE profile_id = %s ORDER BY id",
                     (profile_id,)
                 )
                 rows = await cur.fetchall()
@@ -738,7 +738,7 @@ async def select_specialization(data: SpecializationSelect, current_user: dict =
         async with get_db_connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "INSERT INTO user_specialization_selections (user_id, specialization_id) VALUES (%s, %s) ON CONFLICT DO NOTHING RETURNING id",
+                    "INSERT INTO hr.user_specialization_selections (user_id, specialization_id) VALUES (%s, %s) ON CONFLICT DO NOTHING RETURNING id",
                     (user_id, data.specialization_id)
                 )
         return {"status": "success"}
@@ -753,10 +753,10 @@ async def get_my_specializations(current_user: dict = Depends(get_current_user))
             async with conn.cursor() as cur:
                 await cur.execute("""
                     SELECT s.id, s.name, p.name, ut.id, ut.score, ut.max_score, ut.completed_at, ut.started_at
-                    FROM user_specialization_selections uss
-                    JOIN specializations s ON s.id = uss.specialization_id
-                    JOIN profiles p ON p.id = s.profile_id
-                    LEFT JOIN user_specialization_tests ut ON ut.specialization_id = s.id AND ut.user_id = %s
+                    FROM hr.user_specialization_selections uss
+                    JOIN hr.specializations s ON s.id = uss.specialization_id
+                    JOIN hr.profiles p ON p.id = s.profile_id
+                    LEFT JOIN hr.user_specialization_tests ut ON ut.specialization_id = s.id AND ut.user_id = %s
                     WHERE uss.user_id = %s
                     ORDER BY uss.selected_at DESC
                 """, (user_id, user_id))
@@ -784,16 +784,16 @@ async def start_test(data: TestStart, current_user: dict = Depends(get_current_u
         async with get_db_connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "SELECT id FROM user_specialization_tests WHERE user_id = %s AND specialization_id = %s",
+                    "SELECT id FROM hr.user_specialization_tests WHERE user_id = %s AND specialization_id = %s",
                     (user_id, data.specialization_id)
                 )
                 existing = await cur.fetchone()
-                
+
                 if existing:
                     user_test_id = existing[0]
                 else:
                     await cur.execute(
-                        "INSERT INTO user_specialization_tests (user_id, specialization_id, max_score) VALUES (%s, %s, 24) RETURNING id",
+                        "INSERT INTO hr.user_specialization_tests (user_id, specialization_id, max_score) VALUES (%s, %s, 24) RETURNING id",
                         (user_id, data.specialization_id)
                     )
                     user_test_id = (await cur.fetchone())[0]
@@ -809,20 +809,20 @@ async def get_test_questions(user_test_id: int, current_user: dict = Depends(get
     try:
         async with get_db_connection() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("SELECT user_id FROM user_specialization_tests WHERE id = %s", (user_test_id,))
+                await cur.execute("SELECT user_id FROM hr.user_specialization_tests WHERE id = %s", (user_test_id,))
                 test_data = await cur.fetchone()
-                
+
                 if not test_data or test_data[0] != user_id:
                     raise HTTPException(status_code=403, detail="Access denied")
-                
+
                 await cur.execute("""
                     SELECT c.id, c.name, q.id, q.level, q.question_text, q.var_1, q.var_2, q.var_3, q.var_4,
                            t.name, utt.topic_order, ta.user_answer, ta.is_correct
-                    FROM user_test_topics utt
-                    JOIN topics t ON t.id = utt.topic_id
-                    JOIN competencies c ON c.id = utt.competency_id
-                    JOIN questions q ON q.topic_id = t.id
-                    LEFT JOIN test_answers ta ON ta.question_id = q.id AND ta.user_test_id = utt.user_test_id
+                    FROM hr.user_test_topics utt
+                    JOIN hr.topics t ON t.id = utt.topic_id
+                    JOIN hr.competencies c ON c.id = utt.competency_id
+                    JOIN hr.questions q ON q.topic_id = t.id
+                    LEFT JOIN hr.test_answers ta ON ta.question_id = q.id AND ta.user_test_id = utt.user_test_id
                     WHERE utt.user_test_id = %s
                     ORDER BY utt.topic_order, CASE q.level WHEN 'Junior' THEN 1 WHEN 'Middle' THEN 2 WHEN 'Senior' THEN 3 END
                 """, (user_test_id,))
@@ -863,25 +863,25 @@ async def submit_answer(data: AnswerSubmit, current_user: dict = Depends(get_cur
         async with get_db_connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "SELECT user_id, current_question_number FROM user_specialization_tests WHERE id = %s",
+                    "SELECT user_id, current_question_number FROM hr.user_specialization_tests WHERE id = %s",
                     (data.user_test_id,)
                 )
                 test_user = await cur.fetchone()
-                
+
                 if not test_user or test_user[0] != user_id:
                     raise HTTPException(status_code=403, detail="Access denied")
-                
-                await cur.execute("SELECT correct_answer FROM questions WHERE id = %s", (data.question_id,))
+
+                await cur.execute("SELECT correct_answer FROM hr.questions WHERE id = %s", (data.question_id,))
                 correct_answer = (await cur.fetchone())[0]
                 is_correct = (data.user_answer == correct_answer)
-                
+
                 await cur.execute(
-                    "INSERT INTO test_answers (user_test_id, question_id, user_answer, is_correct) VALUES (%s, %s, %s, %s) ON CONFLICT (user_test_id, question_id) DO NOTHING",
+                    "INSERT INTO hr.test_answers (user_test_id, question_id, user_answer, is_correct) VALUES (%s, %s, %s, %s) ON CONFLICT (user_test_id, question_id) DO NOTHING",
                     (data.user_test_id, data.question_id, data.user_answer, is_correct)
                 )
-                
+
                 await cur.execute(
-                    "UPDATE user_specialization_tests SET current_question_number = %s WHERE id = %s",
+                    "UPDATE hr.user_specialization_tests SET current_question_number = %s WHERE id = %s",
                     (test_user[1] + 1, data.user_test_id)
                 )
         
@@ -896,42 +896,42 @@ async def complete_test(user_test_id: int, current_user: dict = Depends(get_curr
         async with get_db_connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "SELECT user_id, completed_at, score FROM user_specialization_tests WHERE id = %s",
+                    "SELECT user_id, completed_at, score FROM hr.user_specialization_tests WHERE id = %s",
                     (user_test_id,)
                 )
                 test_data = await cur.fetchone()
-                
+
                 if not test_data:
                     raise HTTPException(status_code=404, detail="Test not found")
                 if test_data[0] != user_id:
                     raise HTTPException(status_code=403, detail="Access denied")
-                
+
                 if test_data[1] is not None:
                     await cur.execute(
-                        "SELECT recommendation_text FROM ai_recommendations WHERE user_test_id = %s",
+                        "SELECT recommendation_text FROM hr.ai_recommendations WHERE user_test_id = %s",
                         (user_test_id,)
                     )
                     rec_row = await cur.fetchone()
                     recommendation = rec_row[0] if rec_row else None
-                    
+
                     score = test_data[2]
                     percentage = (score / 24) * 100
                     level = "Senior" if percentage >= 80 else "Middle" if percentage >= 50 else "Junior"
-                    
+
                     return {
                         "status": "already_completed",
                         "score": score, "max_score": 24, "level": level,
                         "recommendation": recommendation
                     }
-                
+
                 await cur.execute(
-                    "SELECT COUNT(*) FROM test_answers WHERE user_test_id = %s AND is_correct = true",
+                    "SELECT COUNT(*) FROM hr.test_answers WHERE user_test_id = %s AND is_correct = true",
                     (user_test_id,)
                 )
                 score = (await cur.fetchone())[0]
-                
+
                 await cur.execute(
-                    "UPDATE user_specialization_tests SET score = %s, completed_at = NOW() WHERE id = %s",
+                    "UPDATE hr.user_specialization_tests SET score = %s, completed_at = NOW() WHERE id = %s",
                     (score, user_test_id)
                 )
         
@@ -957,7 +957,7 @@ async def get_top_competencies(user_test_id: int, current_user: dict = Depends(g
             async with conn.cursor() as cur:
                 # Verify test belongs to user
                 await cur.execute(
-                    "SELECT user_id, specialization_id FROM user_specialization_tests WHERE id = %s",
+                    "SELECT user_id, specialization_id FROM hr.user_specialization_tests WHERE id = %s",
                     (user_test_id,)
                 )
                 test_data = await cur.fetchone()
@@ -973,7 +973,7 @@ async def get_top_competencies(user_test_id: int, current_user: dict = Depends(g
 
                 # Check if self-assessment already submitted
                 await cur.execute("""
-                    SELECT COUNT(*) FROM competency_self_assessments
+                    SELECT COUNT(*) FROM hr.competency_self_assessments
                     WHERE user_test_id = %s
                 """, (user_test_id,))
                 already_submitted = (await cur.fetchone())[0] > 0
@@ -982,7 +982,7 @@ async def get_top_competencies(user_test_id: int, current_user: dict = Depends(g
                 # Get top CORE competencies for this specialization (importance >= 70)
                 await cur.execute("""
                     SELECT c.id, c.name, c.importance
-                    FROM competencies c
+                    FROM hr.competencies c
                     WHERE c.specialization_id = %s
                     AND c.importance >= 70
                     ORDER BY c.importance DESC
@@ -1024,7 +1024,7 @@ async def submit_self_assessment(
             async with conn.cursor() as cur:
                 # Verify test belongs to user
                 await cur.execute(
-                    "SELECT user_id FROM user_specialization_tests WHERE id = %s",
+                    "SELECT user_id FROM hr.user_specialization_tests WHERE id = %s",
                     (user_test_id,)
                 )
                 test_data = await cur.fetchone()
@@ -1046,7 +1046,7 @@ async def submit_self_assessment(
                         raise HTTPException(status_code=400, detail="Rating must be between 1 and 10")
 
                     await cur.execute("""
-                        INSERT INTO competency_self_assessments
+                        INSERT INTO hr.competency_self_assessments
                         (user_test_id, user_id, competency_id, self_rating)
                         VALUES (%s, %s, %s, %s)
                         ON CONFLICT (user_test_id, competency_id)
@@ -1072,9 +1072,9 @@ async def get_results(user_test_id: int, current_user: dict = Depends(get_curren
             async with conn.cursor() as cur:
                 await cur.execute("""
                     SELECT ut.user_id, ut.score, ut.max_score, ut.completed_at, s.name, ar.recommendation_text
-                    FROM user_specialization_tests ut
-                    JOIN specializations s ON s.id = ut.specialization_id
-                    LEFT JOIN ai_recommendations ar ON ar.user_test_id = ut.id
+                    FROM hr.user_specialization_tests ut
+                    JOIN hr.specializations s ON s.id = ut.specialization_id
+                    LEFT JOIN hr.ai_recommendations ar ON ar.user_test_id = ut.id
                     WHERE ut.id = %s
                 """, (user_test_id,))
                 row = await cur.fetchone()
@@ -1104,39 +1104,39 @@ async def get_dashboard_stats():
     try:
         async with get_db_connection() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("SELECT COUNT(DISTINCT id) FROM users")
+                await cur.execute("SELECT COUNT(DISTINCT id) FROM hr.users")
                 total_users = (await cur.fetchone())[0]
-                
-                await cur.execute("SELECT COUNT(DISTINCT user_id) FROM user_specialization_tests WHERE completed_at IS NOT NULL")
+
+                await cur.execute("SELECT COUNT(DISTINCT user_id) FROM hr.user_specialization_tests WHERE completed_at IS NOT NULL")
                 completed_users = (await cur.fetchone())[0]
-                
+
                 await cur.execute("""
                     SELECT COUNT(DISTINCT ut.user_id)
-                    FROM user_specialization_tests ut
+                    FROM hr.user_specialization_tests ut
                     WHERE ut.completed_at IS NULL
-                    AND EXISTS (SELECT 1 FROM test_answers ta WHERE ta.user_test_id = ut.id GROUP BY ta.user_test_id HAVING COUNT(*) >= 10)
-                    AND NOT EXISTS (SELECT 1 FROM user_specialization_tests ut2 WHERE ut2.user_id = ut.user_id AND ut2.completed_at IS NOT NULL)
+                    AND EXISTS (SELECT 1 FROM hr.test_answers ta WHERE ta.user_test_id = ut.id GROUP BY ta.user_test_id HAVING COUNT(*) >= 10)
+                    AND NOT EXISTS (SELECT 1 FROM hr.user_specialization_tests ut2 WHERE ut2.user_id = ut.user_id AND ut2.completed_at IS NOT NULL)
                 """)
                 in_progress = (await cur.fetchone())[0]
-                
+
                 await cur.execute("""
-                    SELECT 
+                    SELECT
                         CASE WHEN (score::numeric / max_score * 100) >= 80 THEN 'Senior'
                              WHEN (score::numeric / max_score * 100) >= 50 THEN 'Middle'
                              ELSE 'Junior' END as level,
                         COUNT(*) as count
-                    FROM user_specialization_tests
+                    FROM hr.user_specialization_tests
                     WHERE completed_at IS NOT NULL
                     GROUP BY level
                 """)
                 levels_data = await cur.fetchall()
                 levels = {row[0]: row[1] for row in levels_data}
-                
+
                 await cur.execute("""
                     SELECT u.name, u.surname, ut.score, ut.max_score, s.name
-                    FROM user_specialization_tests ut
-                    JOIN users u ON u.id = ut.user_id
-                    JOIN specializations s ON s.id = ut.specialization_id
+                    FROM hr.user_specialization_tests ut
+                    JOIN hr.users u ON u.id = ut.user_id
+                    JOIN hr.specializations s ON s.id = ut.specialization_id
                     WHERE ut.completed_at IS NOT NULL
                     ORDER BY ut.score DESC, ut.completed_at ASC
                     LIMIT 20
@@ -1146,11 +1146,11 @@ async def get_dashboard_stats():
                     {"name": f"{row[0]} {row[1]}", "score": row[2], "max_score": row[3], "specialization": row[4]}
                     for row in top_results_data
                 ]
-                
+
                 await cur.execute("""
                     SELECT s.name, COUNT(ut.id) as test_count
-                    FROM specializations s
-                    LEFT JOIN user_specialization_tests ut ON ut.specialization_id = s.id AND ut.completed_at IS NOT NULL
+                    FROM hr.specializations s
+                    LEFT JOIN hr.user_specialization_tests ut ON ut.specialization_id = s.id AND ut.completed_at IS NOT NULL
                     GROUP BY s.id, s.name
                     ORDER BY test_count DESC
                 """)
@@ -1365,7 +1365,7 @@ async def get_hr_results_stats():
                         MIN(score::numeric / max_score::numeric * 100) as min_percentage,
                         MAX(score::numeric / max_score::numeric * 100) as max_percentage,
                         AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 60) as avg_duration_minutes
-                    FROM user_specialization_tests
+                    FROM hr.user_specialization_tests
                     WHERE completed_at IS NOT NULL
                 """)
                 overall = await cur.fetchone()
@@ -1376,8 +1376,8 @@ async def get_hr_results_stats():
                         s.name,
                         COUNT(*) as count,
                         AVG(ust.score::numeric / ust.max_score::numeric * 100) as avg_percentage
-                    FROM user_specialization_tests ust
-                    JOIN specializations s ON ust.specialization_id = s.id
+                    FROM hr.user_specialization_tests ust
+                    JOIN hr.specializations s ON ust.specialization_id = s.id
                     WHERE ust.completed_at IS NOT NULL
                     GROUP BY s.name
                     ORDER BY count DESC
@@ -1393,7 +1393,7 @@ async def get_hr_results_stats():
                             ELSE 'Junior'
                         END as level,
                         COUNT(*) as count
-                    FROM user_specialization_tests
+                    FROM hr.user_specialization_tests
                     WHERE completed_at IS NOT NULL
                     GROUP BY level
                 """)
@@ -1461,10 +1461,10 @@ async def get_hr_result_detail(test_id: int):
                         q.correct_answer,
                         ta.user_answer,
                         ta.is_correct
-                    FROM test_answers ta
-                    JOIN questions q ON ta.question_id = q.id
-                    JOIN topics t ON q.topic_id = t.id
-                    JOIN competencies c ON t.competency_id = c.id
+                    FROM hr.test_answers ta
+                    JOIN hr.questions q ON ta.question_id = q.id
+                    JOIN hr.topics t ON q.topic_id = t.id
+                    JOIN hr.competencies c ON t.competency_id = c.id
                     WHERE ta.user_test_id = $1
                     ORDER BY c.id, t.id, q.level
                 """, (test_id,))
@@ -1473,7 +1473,7 @@ async def get_hr_result_detail(test_id: int):
                 # Get AI recommendation
                 await cur.execute("""
                     SELECT recommendation_text, created_at
-                    FROM ai_recommendations
+                    FROM hr.ai_recommendations
                     WHERE user_test_id = $1
                 """, (test_id,))
                 ai_rec = await cur.fetchone()
@@ -1576,38 +1576,38 @@ async def get_manager_results(
                         'self_rating', csa.self_rating,
                         'importance', c.importance
                     ) ORDER BY c.importance DESC)
-                    FROM competency_self_assessments csa
-                    JOIN competencies c ON csa.competency_id = c.id
+                    FROM hr.competency_self_assessments csa
+                    JOIN hr.competencies c ON csa.competency_id = c.id
                     WHERE csa.user_test_id = ust.id
                 ) as self_assessments,
                 (
                     SELECT AVG(mcr.rating)
-                    FROM manager_competency_ratings mcr
+                    FROM hr.manager_competency_ratings mcr
                     WHERE mcr.user_test_id = ust.id AND mcr.manager_id = %s
                 ) as avg_manager_rating,
                 (
                     SELECT AVG(csa.self_rating)
-                    FROM competency_self_assessments csa
+                    FROM hr.competency_self_assessments csa
                     WHERE csa.user_test_id = ust.id
                 ) as avg_self_rating,
                 ROUND(
                     (ust.score::numeric / ust.max_score::numeric * 100 * 0.5) +
                     COALESCE((
                         SELECT AVG(mcr.rating) / 10.0 * 100 * 0.4
-                        FROM manager_competency_ratings mcr
+                        FROM hr.manager_competency_ratings mcr
                         WHERE mcr.user_test_id = ust.id AND mcr.manager_id = %s
                     ), 0) +
                     COALESCE((
                         SELECT AVG(csa.self_rating) / 10.0 * 100 * 0.1
-                        FROM competency_self_assessments csa
+                        FROM hr.competency_self_assessments csa
                         WHERE csa.user_test_id = ust.id
                     ), 0),
                     2
                 ) as weighted_score
-            FROM user_specialization_tests ust
-            JOIN users u ON ust.user_id = u.id
-            JOIN specializations s ON ust.specialization_id = s.id
-            JOIN profiles p ON s.profile_id = p.id
+            FROM hr.user_specialization_tests ust
+            JOIN hr.users u ON ust.user_id = u.id
+            JOIN hr.specializations s ON ust.specialization_id = s.id
+            JOIN hr.profiles p ON s.profile_id = p.id
             WHERE ust.completed_at IS NOT NULL
             AND u.department_id = %s
         """

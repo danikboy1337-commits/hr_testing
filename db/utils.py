@@ -26,8 +26,8 @@ async def generate_test_topics(user_test_id: int, specialization_id: int):
                     c.importance,
                     t.id as topic_id,
                     t.name as topic_name
-                FROM competencies c
-                JOIN topics t ON t.competency_id = c.id
+                FROM hr.competencies c
+                JOIN hr.topics t ON t.competency_id = c.id
                 WHERE c.specialization_id = %s
                 ORDER BY c.importance DESC, RANDOM()
             """, (specialization_id,))
@@ -94,7 +94,7 @@ async def generate_test_topics(user_test_id: int, specialization_id: int):
             # 5. ✅ Batch INSERT - ОДИН запрос вместо множества!
             if topics_to_insert:
                 await cur.executemany("""
-                    INSERT INTO user_test_topics 
+                    INSERT INTO hr.user_test_topics
                     (user_test_id, topic_id, competency_id, topic_order)
                     VALUES (%s, %s, %s, %s)
                 """, topics_to_insert)
@@ -192,11 +192,11 @@ async def get_test_progress(user_test_id: int) -> dict:
                     COUNT(DISTINCT q.id) as total_questions,
                     COUNT(DISTINCT CASE WHEN ta.id IS NOT NULL THEN q.id END) as answered,
                     COUNT(DISTINCT CASE WHEN ta.is_correct = true THEN q.id END) as correct
-                FROM user_test_topics utt
-                JOIN competencies c ON c.id = utt.competency_id
-                JOIN topics t ON t.id = utt.topic_id
-                JOIN questions q ON q.topic_id = t.id
-                LEFT JOIN test_answers ta ON ta.question_id = q.id AND ta.user_test_id = utt.user_test_id
+                FROM hr.user_test_topics utt
+                JOIN hr.competencies c ON c.id = utt.competency_id
+                JOIN hr.topics t ON t.id = utt.topic_id
+                JOIN hr.questions q ON q.topic_id = t.id
+                LEFT JOIN hr.test_answers ta ON ta.question_id = q.id AND ta.user_test_id = utt.user_test_id
                 WHERE utt.user_test_id = %s
                 GROUP BY c.id, c.name
                 ORDER BY MIN(utt.topic_order)
